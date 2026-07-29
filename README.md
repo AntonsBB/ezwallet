@@ -16,7 +16,8 @@ It is intentionally non-custodial:
 - A wallet broadcast is only `payment_submitted`; an independent reconciler
   verifies the escrow code, state, sender, exact amount, and message before the
   deal advances.
-- D1 stores marketplace state and an append-only deal/ledger event history.
+- D1 stores marketplace state, per-user saved listings, and an append-only
+  deal/ledger event history.
 - Workers KV stores immutable user-uploaded listing images behind a constrained
   media route.
 
@@ -28,9 +29,10 @@ remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 ## Product surface
 
 - **Market:** physical and digital listings, search, category filtering,
-  listing creation, direct purchase, reports.
+  authenticated saved listings, listing creation, direct purchase, reports.
 - **Work:** privacy-safe approximate-area map, opt-in nearby sorting, list
-  fallback, services, jobs, applications, job-owner decisions, and hiring.
+  fallback, authenticated favorites, services, jobs, applications, job-owner
+  decisions, and hiring.
 - **Wallet:** TON Connect, proof verification, transparent fee breakdown,
   per-deal escrow, delivery/completion/dispute actions, reviews.
 - **Profile:** Telegram identity, public reputation, editable details, listings,

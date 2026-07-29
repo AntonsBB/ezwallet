@@ -92,7 +92,11 @@ provider query that finds no matching finalized message.
 - IDs use `crypto.randomUUID()`.
 - Currency amounts are stored as decimal text and handled as `bigint` in code.
 - SQL values use prepared statements.
-- Unique and partial indexes prevent duplicate active deals, duplicate applications, duplicate reviews, replayed payment references, and replayed proof nonces.
+- Unique and partial indexes prevent duplicate active deals, duplicate
+  applications, duplicate reviews, duplicate per-user saved listings, replayed
+  payment references, and replayed proof nonces.
+- Saved listing rows are scoped to the authenticated Telegram user on every
+  read and mutation; the browser cannot choose a different profile.
 - Deal events and ledger entries are append-only.
 - Prepared and submitted chain actions are durable and idempotently reconciled.
 - Listing edits never rewrite a previously accepted quote.

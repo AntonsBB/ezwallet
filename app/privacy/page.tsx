@@ -15,11 +15,11 @@ export default function PrivacyPage() {
           Telegram supplies your numeric account ID and may supply your name,
           username, language, and profile photo when you open the Mini App. We
           store the profile fields you choose, listings, applications, deal
-          events, reviews, reports, wallet public addresses, and payment
-          references required to run the marketplace. If you explicitly attach
-          a map area, coordinates are rounded before they enter application
-          state and are stored with an uncertainty radius; the exact device
-          position is discarded.
+          events, saved listing references, reviews, reports, wallet public
+          addresses, and payment references required to run the marketplace. If
+          you explicitly attach a map area, coordinates are rounded before they
+          enter application state and are stored with an uncertainty radius; the
+          exact device position is discarded.
         </p>
       </section>
       <section>
@@ -53,11 +53,11 @@ export default function PrivacyPage() {
       <section>
         <h2>Your choices</h2>
         <p>
-          You may edit profile information, pause or close listings, disconnect
-          your wallet, use the Work list without sharing an area, remove an
-          attached approximate area before publishing, and ask for deletion
-          where applicable. Some deal, moderation, and public blockchain records
-          must be retained or cannot be erased.
+          You may edit profile information, add or remove saved listings,
+          disconnect your wallet, use the Work list without sharing an area,
+          remove an attached approximate area before publishing, and ask for
+          deletion where applicable. Some deal, moderation, and public
+          blockchain records must be retained or cannot be erased.
         </p>
       </section>
     </main>

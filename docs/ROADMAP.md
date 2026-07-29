@@ -55,8 +55,9 @@ funds, external promotion, bot deletion, or unattended account changes.
 ## 4. Marketplace and local work product
 
 - [x] Expand Market into a category-led Facebook Marketplace-style browse flow.
-- [ ] Add saved searches, favorites, listing lifecycle controls, and stronger
-  seller/reputation context.
+- [x] Add authenticated, D1-backed saved listings across Market and Work.
+- [ ] Add saved searches.
+- [ ] Add listing lifecycle controls and stronger seller/reputation context.
 - [x] Select and implement the approximate-area Work map direction.
 - [x] Add privacy-preserving approximate coordinates and uncertainty radii.
 - [x] Implement map/list synchronization, opt-in distance sorting, map failure

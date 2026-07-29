@@ -172,6 +172,7 @@ type TelegramWebApp = {
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
   disableVerticalSwipes?(): void;
+  openTelegramLink?(url: string): void;
   HapticFeedback?: {
     impactOccurred(style: "light" | "medium" | "heavy"): void;
     notificationOccurred(type: "success" | "warning" | "error"): void;
@@ -184,7 +185,7 @@ declare global {
   }
 }
 
-const workCategories = ["All", "Services", "Jobs", "Remote", "Today"];
+const workCategories = ["All", "Services", "Jobs", "Remote", "Today", "Saved"];
 const marketCategoryCards = [
   { label: "All", icon: Store },
   { label: "Electronics", icon: Laptop },
@@ -360,54 +361,74 @@ function ListingCard({
   onOpen,
   wide = false,
   proximity = null,
+  saved = false,
+  saving = false,
+  onToggleSave,
 }: {
   listing: Listing;
   onOpen: (listing: Listing) => void;
   wide?: boolean;
   proximity?: string | null;
+  saved?: boolean;
+  saving?: boolean;
+  onToggleSave: (listing: Listing) => void;
 }) {
   return (
-    <button
-      type="button"
+    <article
       className={wide ? "listing-card listing-card-wide" : "listing-card"}
-      onClick={() => onOpen(listing)}
     >
-      <span
-        className={
-          listing.imageUrl ? "listing-media" : "listing-media listing-media-empty"
-        }
+      <button
+        type="button"
+        className="listing-card-open"
+        onClick={() => onOpen(listing)}
+        aria-label={`Open ${listing.title}`}
       >
-        {listing.imageUrl ? (
-          <img src={listing.imageUrl} alt="" draggable={false} />
-        ) : (
-          <BriefcaseBusiness size={30} />
-        )}
-        <span className="listing-type">{listing.type}</span>
-        <span className="save-button" aria-hidden="true">
-          <Heart size={15} />
-        </span>
-      </span>
-      <span className="listing-copy">
-        <span className="listing-category">{listing.category}</span>
-        <strong>{listing.title}</strong>
-        <span className="listing-meta">
-          <Star size={12} fill="currentColor" />{" "}
-          {formatRating(listing.ownerRatingMilli)}
-          <i>·</i>
-          {listing.location}
-          {proximity && (
-            <>
-              <i>·</i>
-              {proximity}
-            </>
+        <span
+          className={
+            listing.imageUrl
+              ? "listing-media"
+              : "listing-media listing-media-empty"
+          }
+        >
+          {listing.imageUrl ? (
+            <img src={listing.imageUrl} alt="" draggable={false} />
+          ) : (
+            <BriefcaseBusiness size={30} />
           )}
+          <span className="listing-type">{listing.type}</span>
         </span>
-        <span className="listing-footer">
-          <b>{nanoToTon(listing.priceNano)} TON</b>
-          <span>{listing.type === "job" ? "budget" : listing.delivery}</span>
+        <span className="listing-copy">
+          <span className="listing-category">{listing.category}</span>
+          <strong>{listing.title}</strong>
+          <span className="listing-meta">
+            <Star size={12} fill="currentColor" />{" "}
+            {formatRating(listing.ownerRatingMilli)}
+            <i>·</i>
+            {listing.location}
+            {proximity && (
+              <>
+                <i>·</i>
+                {proximity}
+              </>
+            )}
+          </span>
+          <span className="listing-footer">
+            <b>{nanoToTon(listing.priceNano)} TON</b>
+            <span>{listing.type === "job" ? "budget" : listing.delivery}</span>
+          </span>
         </span>
-      </span>
-    </button>
+      </button>
+      <button
+        type="button"
+        className={saved ? "save-button is-saved" : "save-button"}
+        aria-label={saved ? `Remove ${listing.title} from saved` : `Save ${listing.title}`}
+        aria-pressed={saved}
+        disabled={saving}
+        onClick={() => onToggleSave(listing)}
+      >
+        <Heart size={15} fill={saved ? "currentColor" : "none"} />
+      </button>
+    </article>
   );
 }
 
@@ -468,6 +489,13 @@ function MarketScreen({
   category,
   setCategory,
   onOpen,
+  savedListingIds,
+  savingListingIds,
+  savedOnly,
+  savedCount,
+  favoritesAvailable,
+  onToggleSavedOnly,
+  onToggleSave,
 }: {
   listings: Listing[];
   query: string;
@@ -475,6 +503,13 @@ function MarketScreen({
   category: string;
   setCategory: (value: string) => void;
   onOpen: (listing: Listing) => void;
+  savedListingIds: ReadonlySet<string>;
+  savingListingIds: ReadonlySet<string>;
+  savedOnly: boolean;
+  savedCount: number;
+  favoritesAvailable: boolean;
+  onToggleSavedOnly: () => void;
+  onToggleSave: (listing: Listing) => void;
 }) {
   return (
     <main className="screen market-screen">
@@ -522,21 +557,51 @@ function MarketScreen({
         </div>
       </section>
 
+      <div className="market-saved-filter">
+        <button
+          type="button"
+          className={savedOnly ? "is-active" : ""}
+          aria-pressed={savedOnly}
+          disabled={!favoritesAvailable}
+          onClick={onToggleSavedOnly}
+        >
+          <Heart size={15} fill={savedOnly ? "currentColor" : "none"} />
+          Saved
+          <strong>{savedCount}</strong>
+        </button>
+        <span>
+          {favoritesAvailable
+            ? "Synced to your Telegram profile"
+            : "Saved listings are unavailable"}
+        </span>
+      </div>
+
       <section className="content-section">
         <SectionHeading
-          title="Fresh nearby"
+          title={savedOnly ? "Your saved listings" : "Fresh nearby"}
           action={`${listings.length} ${listings.length === 1 ? "listing" : "listings"}`}
         />
         <div className="listing-grid">
           {listings.map((listing) => (
-            <ListingCard key={listing.id} listing={listing} onOpen={onOpen} />
+            <ListingCard
+              key={listing.id}
+              listing={listing}
+              onOpen={onOpen}
+              saved={savedListingIds.has(listing.id)}
+              saving={savingListingIds.has(listing.id)}
+              onToggleSave={onToggleSave}
+            />
           ))}
         </div>
         {!listings.length && (
           <div className="empty-state">
-            <Search size={24} />
-            <strong>No matches yet</strong>
-            <p>Try another keyword or category.</p>
+            {savedOnly ? <Heart size={24} /> : <Search size={24} />}
+            <strong>{savedOnly ? "Nothing saved yet" : "No matches yet"}</strong>
+            <p>
+              {savedOnly
+                ? "Save a listing to keep it here."
+                : "Try another keyword or category."}
+            </p>
           </div>
         )}
       </section>
@@ -566,6 +631,9 @@ function WorkScreen({
   setCategory,
   onOpen,
   onCreate,
+  savedListingIds,
+  savingListingIds,
+  onToggleSave,
 }: {
   listings: Listing[];
   query: string;
@@ -574,6 +642,9 @@ function WorkScreen({
   setCategory: (value: string) => void;
   onOpen: (listing: Listing) => void;
   onCreate: () => void;
+  savedListingIds: ReadonlySet<string>;
+  savingListingIds: ReadonlySet<string>;
+  onToggleSave: (listing: Listing) => void;
 }) {
   const [view, setView] = useState<"map" | "list">("map");
   const [referencePoint, setReferencePoint] =
@@ -743,6 +814,9 @@ function WorkScreen({
                 proximity={formatApproximateDistance(
                   approximateDistance(listing, referencePoint)
                 )}
+                saved={savedListingIds.has(listing.id)}
+                saving={savingListingIds.has(listing.id)}
+                onToggleSave={onToggleSave}
                 wide
               />
             ))}
@@ -1139,6 +1213,10 @@ function ListingSheet({
   onPay,
   onApply,
   onReport,
+  onMessage,
+  onToggleSave,
+  saved,
+  saving,
   busy,
 }: {
   listing: Listing;
@@ -1148,6 +1226,10 @@ function ListingSheet({
   onPay: (listing: Listing) => void;
   onApply: (listing: Listing) => void;
   onReport: (listing: Listing) => void;
+  onMessage: (listing: Listing) => void;
+  onToggleSave: (listing: Listing) => void;
+  saved: boolean;
+  saving: boolean;
   busy: boolean;
 }) {
   const isOwner = currentUser?.id === listing.ownerId;
@@ -1169,8 +1251,15 @@ function ListingSheet({
         <button type="button" onClick={onClose} aria-label="Close listing">
           <ArrowLeft size={19} />
         </button>
-        <button type="button" aria-label="Save listing">
-          <Heart size={18} />
+        <button
+          type="button"
+          className={saved ? "is-saved" : ""}
+          aria-label={saved ? "Remove listing from saved" : "Save listing"}
+          aria-pressed={saved}
+          disabled={saving}
+          onClick={() => onToggleSave(listing)}
+        >
+          <Heart size={18} fill={saved ? "currentColor" : "none"} />
         </button>
       </div>
       <div className="detail-body">
@@ -1199,7 +1288,18 @@ function ListingSheet({
               {listing.ownerDealsCompleted} completed
             </span>
           </div>
-          <button type="button">
+          <button
+            type="button"
+            aria-label={
+              isOwner
+                ? "This is your listing"
+                : listing.ownerUsername
+                ? `Message ${listing.ownerName} on Telegram`
+                : "Seller has no public Telegram username"
+            }
+            disabled={!listing.ownerUsername || isOwner}
+            onClick={() => onMessage(listing)}
+          >
             <MessageCircle size={17} />
           </button>
         </div>
@@ -2073,6 +2173,10 @@ export default function EzWalletApp() {
   const [session, setSession] = useState<User | null>(null);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [applications, setApplications] = useState<ApplicationSummary[]>([]);
+  const [savedListingIds, setSavedListingIds] = useState<string[]>([]);
+  const [favoritePendingIds, setFavoritePendingIds] = useState<string[]>([]);
+  const [favoritesAvailable, setFavoritesAvailable] = useState(true);
+  const [marketSavedOnly, setMarketSavedOnly] = useState(false);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [query, setQuery] = useState("");
@@ -2174,14 +2278,32 @@ export default function EzWalletApp() {
     setSession(data.user);
     setDeals(data.deals);
 
-    const applicationsResponse = await apiFetch("/api/applications", {
-      cache: "no-store",
-    });
-    if (applicationsResponse.ok) {
+    const [applicationsResult, favoritesResult] = await Promise.allSettled([
+      apiFetch("/api/applications", { cache: "no-store" }),
+      apiFetch("/api/favorites", { cache: "no-store" }),
+    ]);
+    if (
+      applicationsResult.status === "fulfilled" &&
+      applicationsResult.value.ok
+    ) {
+      const applicationsResponse = applicationsResult.value;
       const applicationsData = (await applicationsResponse.json()) as {
         applications: ApplicationSummary[];
       };
       setApplications(applicationsData.applications);
+    }
+    if (
+      favoritesResult.status === "fulfilled" &&
+      favoritesResult.value.ok
+    ) {
+      const favoritesResponse = favoritesResult.value;
+      const favoritesData = (await favoritesResponse.json()) as {
+        listingIds: string[];
+      };
+      setSavedListingIds(favoritesData.listingIds);
+      setFavoritesAvailable(true);
+    } else {
+      setFavoritesAvailable(false);
     }
   }, [apiFetch, initData]);
 
@@ -2301,6 +2423,23 @@ export default function EzWalletApp() {
       });
   }, [apiFetch, loadSession, showToast, telegram, wallet]);
 
+  const savedListingSet = useMemo(
+    () => new Set(savedListingIds),
+    [savedListingIds]
+  );
+  const favoritePendingSet = useMemo(
+    () => new Set(favoritePendingIds),
+    [favoritePendingIds]
+  );
+  const savedMarketCount = useMemo(
+    () =>
+      listings.filter(
+        (listing) =>
+          listing.section === "market" && savedListingSet.has(listing.id)
+      ).length,
+    [listings, savedListingSet]
+  );
+
   const filteredMarket = useMemo(() => {
     const normalized = query.toLowerCase().trim();
     return listings.filter((listing) => {
@@ -2313,9 +2452,17 @@ export default function EzWalletApp() {
       const categoryMatches =
         marketCategory === "All" ||
         listing.category.toLowerCase() === marketCategory.toLowerCase();
-      return queryMatches && categoryMatches;
+      const savedMatches =
+        !marketSavedOnly || savedListingSet.has(listing.id);
+      return queryMatches && categoryMatches && savedMatches;
     });
-  }, [listings, marketCategory, query]);
+  }, [
+    listings,
+    marketCategory,
+    marketSavedOnly,
+    query,
+    savedListingSet,
+  ]);
 
   const filteredWork = useMemo(() => {
     const normalized = query.toLowerCase().trim();
@@ -2331,10 +2478,107 @@ export default function EzWalletApp() {
         (workCategory === "Services" && listing.type === "service") ||
         (workCategory === "Jobs" && listing.type === "job") ||
         (workCategory === "Remote" && listing.location.includes("Remote")) ||
-        (workCategory === "Today" && listing.delivery.toLowerCase().includes("today"));
+        (workCategory === "Today" &&
+          listing.delivery.toLowerCase().includes("today")) ||
+        (workCategory === "Saved" && savedListingSet.has(listing.id));
       return queryMatches && categoryMatches;
     });
-  }, [listings, query, workCategory]);
+  }, [listings, query, savedListingSet, workCategory]);
+
+  const toggleFavorite = async (listing: Listing) => {
+    if (!session) {
+      showToast(
+        "Open Easy Wallet from Telegram to save listings to your profile.",
+        "error"
+      );
+      return;
+    }
+    if (!favoritesAvailable) {
+      showToast(
+        "Saved listings are temporarily unavailable. Try reopening Easy Wallet.",
+        "error"
+      );
+      return;
+    }
+    if (favoritePendingSet.has(listing.id)) return;
+
+    const wasSaved = savedListingSet.has(listing.id);
+    setFavoritePendingIds((current) => [...current, listing.id]);
+    setSavedListingIds((current) =>
+      wasSaved
+        ? current.filter((listingId) => listingId !== listing.id)
+        : [...current, listing.id]
+    );
+
+    try {
+      const response = wasSaved
+        ? await apiFetch(`/api/favorites/${encodeURIComponent(listing.id)}`, {
+            method: "DELETE",
+          })
+        : await apiFetch("/api/favorites", {
+            method: "POST",
+            body: JSON.stringify({ listingId: listing.id }),
+          });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(
+          data.error ??
+            (wasSaved
+              ? "Saved listing could not be removed."
+              : "Listing could not be saved.")
+        );
+      }
+      telegram?.HapticFeedback?.notificationOccurred("success");
+      showToast(
+        wasSaved ? "Removed from saved listings." : "Saved to your profile.",
+        "success"
+      );
+    } catch (error) {
+      setSavedListingIds((current) =>
+        wasSaved
+          ? current.includes(listing.id)
+            ? current
+            : [...current, listing.id]
+          : current.filter((listingId) => listingId !== listing.id)
+      );
+      telegram?.HapticFeedback?.notificationOccurred("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Saved listings could not be updated.",
+        "error"
+      );
+    } finally {
+      setFavoritePendingIds((current) =>
+        current.filter((listingId) => listingId !== listing.id)
+      );
+    }
+  };
+
+  const toggleSavedMarket = () => {
+    if (!session) {
+      showToast(
+        "Open Easy Wallet from Telegram to view your saved listings.",
+        "error"
+      );
+      return;
+    }
+    setMarketSavedOnly((current) => !current);
+  };
+
+  const messageListingOwner = (listing: Listing) => {
+    const username = listing.ownerUsername?.trim();
+    if (!username || !/^[A-Za-z0-9_]{5,32}$/.test(username)) {
+      showToast("This seller has no public Telegram username.", "error");
+      return;
+    }
+    const url = `https://t.me/${username}`;
+    if (telegram?.openTelegramLink) {
+      telegram.openTelegramLink(url);
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   const openListing = (listing: Listing) => {
     telegram?.HapticFeedback?.impactOccurred("light");
@@ -2667,6 +2911,13 @@ export default function EzWalletApp() {
               category={marketCategory}
               setCategory={setMarketCategory}
               onOpen={openListing}
+              savedListingIds={savedListingSet}
+              savingListingIds={favoritePendingSet}
+              savedOnly={marketSavedOnly}
+              savedCount={savedMarketCount}
+              favoritesAvailable={favoritesAvailable}
+              onToggleSavedOnly={toggleSavedMarket}
+              onToggleSave={(listing) => void toggleFavorite(listing)}
             />
           )}
           {tab === "work" && (
@@ -2675,9 +2926,28 @@ export default function EzWalletApp() {
               query={query}
               setQuery={setQuery}
               category={workCategory}
-              setCategory={setWorkCategory}
+              setCategory={(value) => {
+                if (value === "Saved" && !session) {
+                  showToast(
+                    "Open Easy Wallet from Telegram to view your saved listings.",
+                    "error"
+                  );
+                  return;
+                }
+                if (value === "Saved" && !favoritesAvailable) {
+                  showToast(
+                    "Saved listings are temporarily unavailable. Try reopening Easy Wallet.",
+                    "error"
+                  );
+                  return;
+                }
+                setWorkCategory(value);
+              }}
               onOpen={openListing}
               onCreate={() => openCreate("work")}
+              savedListingIds={savedListingSet}
+              savingListingIds={favoritePendingSet}
+              onToggleSave={(listing) => void toggleFavorite(listing)}
             />
           )}
           {tab === "wallet" && (
@@ -2741,6 +3011,10 @@ export default function EzWalletApp() {
                 setSelectedListing(listing);
                 setSheet("report");
               }}
+              onMessage={messageListingOwner}
+              onToggleSave={(listing) => void toggleFavorite(listing)}
+              saved={savedListingSet.has(selectedListing.id)}
+              saving={favoritePendingSet.has(selectedListing.id)}
               busy={busy}
             />
           </BottomSheet>

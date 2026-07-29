@@ -364,6 +364,29 @@ export const blockedUsers = sqliteTable(
   ]
 );
 
+export const listingFavorites = sqliteTable(
+  "listing_favorites",
+  {
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    listingId: text("listing_id")
+      .notNull()
+      .references(() => listings.id),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("listing_favorites_user_listing_idx").on(
+      table.userId,
+      table.listingId
+    ),
+    index("listing_favorites_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+  ]
+);
+
 export const rateLimits = sqliteTable(
   "rate_limits",
   {

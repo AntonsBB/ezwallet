@@ -33,6 +33,7 @@ jobs:
           github-token: ${{ github.token }}
       - run: npm install --global npm@11.6.2
       - run: npm ci
+      - run: npm run db:migrate:local
       - run: npm run test:unit
       - run: npm run types:cloudflare:check
       - run: npm run lint

@@ -480,7 +480,16 @@ img {
 }
 
 .listing-card {
+  position: relative;
   min-width: 0;
+  padding: 0;
+  display: block;
+  text-align: left;
+  background: transparent;
+}
+
+.listing-card-open {
+  width: 100%;
   padding: 0;
   display: block;
   text-align: left;
@@ -508,7 +517,7 @@ img {
   transition: transform 260ms ease;
 }
 
-.listing-card:active .listing-media img {
+.listing-card-open:active .listing-media img {
   transform: scale(1.025);
 }
 
@@ -536,8 +545,61 @@ img {
   height: 27px;
   display: grid;
   place-items: center;
+  z-index: 2;
+  color: #4f554e;
   background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(225, 229, 222, 0.82);
   border-radius: 8px;
+}
+
+.save-button.is-saved {
+  color: #bd3848;
+  background: #fff1f3;
+  border-color: #f3d6db;
+}
+
+.market-saved-filter {
+  margin-top: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.market-saved-filter button {
+  min-height: 34px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #666b64;
+  background: #f5f6f3;
+  border: 1px solid #e7e9e4;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.market-saved-filter button.is-active {
+  color: #9c2838;
+  background: #fff1f3;
+  border-color: #f2d5da;
+}
+
+.market-saved-filter button strong {
+  min-width: 18px;
+  padding: 3px 5px;
+  color: inherit;
+  background: #fff;
+  border-radius: 999px;
+  font-size: 8px;
+  text-align: center;
+}
+
+.market-saved-filter > span {
+  color: #969a93;
+  font-size: 7px;
+  font-weight: 750;
 }
 
 .listing-copy {
@@ -1103,13 +1165,23 @@ img {
 
 .listing-card-wide {
   padding: 10px;
-  display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  gap: 12px;
+  display: block;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 18px;
   box-shadow: 0 7px 24px rgba(25, 31, 23, 0.045);
+}
+
+.listing-card-wide .listing-card-open {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.listing-card-wide .save-button {
+  top: 18px;
+  right: auto;
+  left: 86px;
 }
 
 .listing-card-wide .listing-media {
@@ -1795,6 +1867,11 @@ img {
   left: auto;
 }
 
+.detail-media > button.is-saved {
+  color: #bd3848;
+  background: #fff1f3;
+}
+
 .detail-body {
   padding: 18px;
 }
@@ -2359,7 +2436,7 @@ img {
     gap: 14px 9px;
   }
 
-  .listing-card-wide {
+  .listing-card-wide .listing-card-open {
     grid-template-columns: 90px minmax(0, 1fr);
   }
 
