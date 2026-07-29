@@ -10,20 +10,26 @@ import {
   ArrowRight,
   BadgeCheck,
   BanknoteArrowDown,
+  Bike,
   BriefcaseBusiness,
+  CarFront,
   Check,
   ChevronRight,
   CircleHelp,
   Clock3,
   Heart,
+  House,
   Info,
+  Laptop,
   MapPin,
   MessageCircle,
   PackageCheck,
   Plus,
   Search,
   Settings2,
+  Shapes,
   ShieldCheck,
+  Shirt,
   ShoppingBag,
   Sparkles,
   Star,
@@ -32,6 +38,7 @@ import {
   WalletCards,
   X,
   Zap,
+  FileDown,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { calculateTransactionFees, nanoToTon } from "@/lib/format";
@@ -165,8 +172,17 @@ declare global {
   }
 }
 
-const marketCategories = ["All", "Physical", "Digital", "Electronics", "Mobility"];
 const workCategories = ["All", "Services", "Jobs", "Remote", "Today"];
+const marketCategoryCards = [
+  { label: "All", icon: Store },
+  { label: "Electronics", icon: Laptop },
+  { label: "Mobility", icon: Bike },
+  { label: "Vehicles", icon: CarFront },
+  { label: "Home", icon: House },
+  { label: "Fashion", icon: Shirt },
+  { label: "Digital", icon: FileDown },
+  { label: "Other", icon: Shapes },
+] as const;
 const escrowFundingReserveNano = 120_000_000n;
 
 function compactAddress(address: string) {
@@ -462,11 +478,29 @@ function MarketScreen({
         />
       </section>
 
-      <CategoryRail
-        categories={marketCategories}
-        selected={category}
-        onSelect={setCategory}
-      />
+      <section className="market-categories" aria-label="Marketplace categories">
+        <SectionHeading title="Browse categories" />
+        <div className="market-category-grid">
+          {marketCategoryCards.map(({ label, icon: Icon }) => (
+            <button
+              key={label}
+              type="button"
+              className={
+                category === label
+                  ? "market-category is-selected"
+                  : "market-category"
+              }
+              onClick={() => setCategory(label)}
+              aria-pressed={category === label}
+            >
+              <span>
+                <Icon size={18} />
+              </span>
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="content-section">
         <SectionHeading
@@ -1965,7 +1999,6 @@ export default function EzWalletApp() {
           .includes(normalized);
       const categoryMatches =
         marketCategory === "All" ||
-        listing.type.toLowerCase() === marketCategory.toLowerCase() ||
         listing.category.toLowerCase() === marketCategory.toLowerCase();
       return queryMatches && categoryMatches;
     });
