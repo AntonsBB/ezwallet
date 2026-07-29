@@ -350,6 +350,7 @@ img {
 }
 
 .search-field button {
+  position: relative;
   width: 31px;
   height: 31px;
   padding: 0;
@@ -359,6 +360,29 @@ img {
   background: #fff;
   border: 1px solid #e5e7e2;
   border-radius: 9px;
+}
+
+.search-field button.has-active-filters {
+  color: #fff;
+  background: #111;
+  border-color: #111;
+}
+
+.search-field button > span {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #168653;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  font-size: 7px;
+  font-weight: 950;
 }
 
 .category-rail {
@@ -602,6 +626,37 @@ img {
   font-weight: 750;
 }
 
+.market-active-filters {
+  min-height: 36px;
+  margin-top: 9px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #346147;
+  background: #edf8f1;
+  border: 1px solid #dcefe3;
+  border-radius: 11px;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.market-active-filters span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.market-active-filters button {
+  padding: 5px 7px;
+  color: inherit;
+  background: #fff;
+  border-radius: 7px;
+  font-size: 8px;
+  font-weight: 900;
+}
+
 .listing-copy {
   padding-top: 9px;
   display: grid;
@@ -729,6 +784,21 @@ img {
 .empty-state p {
   margin: 0;
   font-size: 10px;
+}
+
+.empty-state > button {
+  min-height: 34px;
+  margin-top: 4px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #fff;
+  background: #111;
+  border-radius: 9px;
+  font-size: 8px;
+  font-weight: 900;
 }
 
 .empty-state.compact {
@@ -1992,6 +2062,171 @@ img {
   flex: none;
   background: #f5f6f3;
   border-radius: 10px;
+}
+
+.market-filter-form {
+  padding: 14px 18px max(22px, env(safe-area-inset-bottom));
+  display: grid;
+  gap: 18px;
+}
+
+.market-filter-intro {
+  padding: 13px;
+  color: #5f665d;
+  background: #f4f7f2;
+  border: 1px solid #e4e9e1;
+  border-radius: 14px;
+}
+
+.market-filter-intro p {
+  margin: 5px 0 0;
+  font-size: 9px;
+  line-height: 1.48;
+}
+
+.market-filter-form fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.market-filter-form legend,
+.filter-sort-field > span {
+  margin-bottom: 8px;
+  color: #30342f;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.filter-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.filter-choice-grid button {
+  min-height: 39px;
+  padding: 0 8px;
+  color: #676c65;
+  background: #f5f6f3;
+  border: 1px solid #e7eae4;
+  border-radius: 11px;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.filter-choice-grid button.is-selected {
+  color: #fff;
+  background: #111;
+  border-color: #111;
+}
+
+.filter-price-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.filter-price-grid label,
+.filter-sort-field {
+  display: grid;
+  gap: 7px;
+}
+
+.filter-price-grid label {
+  min-width: 0;
+}
+
+.filter-price-grid label > span {
+  color: #777c74;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.filter-price-grid label > div {
+  width: 100%;
+  min-width: 0;
+  height: 43px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #dde1da;
+  border-radius: 11px;
+}
+
+.filter-price-grid input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  font-size: 11px;
+}
+
+.filter-price-grid b {
+  color: #8d918a;
+  font-size: 8px;
+}
+
+.filter-sort-field select {
+  width: 100%;
+  height: 43px;
+  padding: 0 11px;
+  border: 1px solid #dde1da;
+  outline: 0;
+  background: #fff;
+  border-radius: 11px;
+  font-size: 11px;
+}
+
+.filter-validation,
+.filter-result-preview {
+  min-height: 42px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 11px;
+  font-size: 9px;
+  line-height: 1.4;
+  font-weight: 800;
+}
+
+.filter-validation {
+  color: #91453d;
+  background: #fff1ef;
+  border: 1px solid #f3d8d4;
+}
+
+.filter-result-preview {
+  color: #316849;
+  background: #edf8f1;
+  border: 1px solid #d9eddf;
+}
+
+.market-filter-actions {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+}
+
+.market-filter-actions button {
+  min-height: 43px;
+  padding: 0 14px;
+  border-radius: 11px;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.market-filter-actions button:first-child {
+  color: #5f655d;
+  background: #f2f4f0;
+}
+
+.market-filter-actions button:last-child {
+  color: #fff;
+  background: #111;
 }
 
 .listing-detail {

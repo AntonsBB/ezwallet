@@ -42,7 +42,9 @@ The production interface keeps the source identity while removing the old presen
 
 1. Open the Mini App from the Telegram bot.
 2. Telegram init data is validated by the backend.
-3. Browse or filter active Market listings.
+3. Browse active Market listings by normalized category, listing type, exact
+   TON price range, or price/newest order. Empty results never fabricate stock
+   and always offer a clear or create action.
 4. Open a listing and inspect seller reputation, delivery, price, and safety notes.
 5. Connect and verify a TON wallet.
 6. Review an immutable quote showing the base price, 1% buyer fee, 1% seller fee, buyer total, seller proceeds, recipients, and network.

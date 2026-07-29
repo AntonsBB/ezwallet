@@ -28,9 +28,10 @@ remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Product surface
 
-- **Market:** physical and digital listings, search, category filtering,
-  authenticated saved listings, owner-only pause/reactivate/close controls,
-  listing creation, direct purchase, reports.
+- **Market:** physical and digital listings, normalized categories, exact TON
+  price ranges, type and price sorting, authenticated saved listings,
+  owner-only pause/reactivate/close controls, listing creation, direct purchase,
+  and reports.
 - **Work:** privacy-safe approximate-area map, opt-in nearby sorting, list
   fallback, authenticated favorites, services, jobs, applications, job-owner
   decisions, and hiring.

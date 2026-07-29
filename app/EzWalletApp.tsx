@@ -51,6 +51,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { calculateTransactionFees, nanoToTon } from "@/lib/format";
 import { normalizePublicCoordinates } from "@/lib/geo";
 import {
+  activeMarketFilterCount,
+  defaultMarketFilterForm,
+  filterAndSortMarketListings,
+  marketCategoryOptions,
+  parseMarketPriceRange,
+  type MarketFilterForm,
+  type MarketListingType,
+  type MarketSortOrder,
+} from "@/lib/market-discovery";
+import {
   approximateDistance,
   formatApproximateDistance,
   sortListingsByDistance,
@@ -66,6 +76,7 @@ type SheetName =
   | "payment"
   | "profile"
   | "listings"
+  | "market-filters"
   | "report"
   | "dispute"
   | null;
@@ -499,10 +510,14 @@ function SearchField({
   query,
   onChange,
   placeholder,
+  onFilter,
+  activeFilterCount = 0,
 }: {
   query: string;
   onChange: (value: string) => void;
   placeholder: string;
+  onFilter?: () => void;
+  activeFilterCount?: number;
 }) {
   return (
     <label className="search-field">
@@ -513,9 +528,23 @@ function SearchField({
         placeholder={placeholder}
         aria-label={placeholder}
       />
-      <button type="button" aria-label="Search filters">
-        <Settings2 size={17} />
-      </button>
+      {onFilter && (
+        <button
+          type="button"
+          className={activeFilterCount > 0 ? "has-active-filters" : ""}
+          aria-label={
+            activeFilterCount > 0
+              ? `Market filters, ${activeFilterCount} active`
+              : "Market filters"
+          }
+          onClick={onFilter}
+        >
+          <Settings2 size={17} />
+          {activeFilterCount > 0 && (
+            <span aria-hidden="true">{activeFilterCount}</span>
+          )}
+        </button>
+      )}
     </label>
   );
 }
@@ -527,11 +556,16 @@ function MarketScreen({
   category,
   setCategory,
   onOpen,
+  onOpenFilters,
+  onResetFilters,
+  onCreate,
   savedListingIds,
   savingListingIds,
   signedIn,
   savedOnly,
   savedCount,
+  totalListingCount,
+  advancedFilterCount,
   favoritesAvailable,
   onToggleSavedOnly,
   onToggleSave,
@@ -542,11 +576,16 @@ function MarketScreen({
   category: string;
   setCategory: (value: string) => void;
   onOpen: (listing: Listing) => void;
+  onOpenFilters: () => void;
+  onResetFilters: () => void;
+  onCreate: () => void;
   savedListingIds: ReadonlySet<string>;
   savingListingIds: ReadonlySet<string>;
   signedIn: boolean;
   savedOnly: boolean;
   savedCount: number;
+  totalListingCount: number;
+  advancedFilterCount: number;
   favoritesAvailable: boolean;
   onToggleSavedOnly: () => void;
   onToggleSave: (listing: Listing) => void;
@@ -570,6 +609,8 @@ function MarketScreen({
           query={query}
           onChange={setQuery}
           placeholder="Search the market"
+          onFilter={onOpenFilters}
+          activeFilterCount={advancedFilterCount}
         />
       </section>
 
@@ -618,6 +659,19 @@ function MarketScreen({
         </span>
       </div>
 
+      {advancedFilterCount > 0 && (
+        <div className="market-active-filters" role="status">
+          <span>
+            <Settings2 size={14} />
+            {advancedFilterCount} advanced{" "}
+            {advancedFilterCount === 1 ? "filter" : "filters"}
+          </span>
+          <button type="button" onClick={onResetFilters}>
+            Clear
+          </button>
+        </div>
+      )}
+
       <section className="content-section">
         <SectionHeading
           title={savedOnly ? "Your saved listings" : "Fresh nearby"}
@@ -638,12 +692,31 @@ function MarketScreen({
         {!listings.length && (
           <div className="empty-state">
             {savedOnly ? <Heart size={24} /> : <Search size={24} />}
-            <strong>{savedOnly ? "Nothing saved yet" : "No matches yet"}</strong>
+            <strong>
+              {savedOnly
+                ? "Nothing saved yet"
+                : totalListingCount === 0
+                  ? "No marketplace listings yet"
+                  : "No listings match"}
+            </strong>
             <p>
               {savedOnly
                 ? "Save a listing to keep it here."
-                : "Try another keyword or category."}
+                : totalListingCount === 0
+                  ? "Only real published posts appear here."
+                  : "Clear or adjust the search, category, and filters."}
             </p>
+            {!savedOnly && totalListingCount === 0 ? (
+              <button type="button" onClick={onCreate}>
+                <Plus size={14} /> Create the first listing
+              </button>
+            ) : (
+              !savedOnly && (
+                <button type="button" onClick={onResetFilters}>
+                  <X size={14} /> Clear search and filters
+                </button>
+              )
+            )}
           </div>
         )}
       </section>
@@ -662,6 +735,155 @@ function MarketScreen({
         <ChevronRight size={18} />
       </section>
     </main>
+  );
+}
+
+function MarketFiltersSheet({
+  open,
+  draft,
+  error,
+  resultCount,
+  onChange,
+  onClear,
+  onClose,
+  onApply,
+}: {
+  open: boolean;
+  draft: MarketFilterForm;
+  error: string;
+  resultCount: number | null;
+  onChange: (draft: MarketFilterForm) => void;
+  onClear: () => void;
+  onClose: () => void;
+  onApply: () => void;
+}) {
+  const typeOptions: Array<{
+    value: MarketListingType;
+    label: string;
+  }> = [
+    { value: "all", label: "All listings" },
+    { value: "physical", label: "Physical" },
+    { value: "digital", label: "Digital" },
+  ];
+  const normalizePriceInput = (value: string) =>
+    value.replace(/[^0-9.]/g, "").slice(0, 16);
+
+  return (
+    <BottomSheet open={open} onClose={onClose} title="Market filters">
+      <form
+        className="market-filter-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onApply();
+        }}
+      >
+        <div className="market-filter-intro">
+          <span className="eyebrow">Real listings only</span>
+          <p>
+            Narrow what is already published. Prices use exact TON amounts and
+            never change a seller&apos;s quote.
+          </p>
+        </div>
+
+        <fieldset>
+          <legend>Listing type</legend>
+          <div className="filter-choice-grid">
+            {typeOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={draft.type === option.value ? "is-selected" : ""}
+                aria-pressed={draft.type === option.value}
+                onClick={() => onChange({ ...draft, type: option.value })}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Price range</legend>
+          <div className="filter-price-grid">
+            <label>
+              <span>Minimum</span>
+              <div>
+                <input
+                  inputMode="decimal"
+                  value={draft.minPriceTon}
+                  placeholder="No minimum"
+                  aria-describedby={error ? "market-filter-error" : undefined}
+                  onChange={(event) =>
+                    onChange({
+                      ...draft,
+                      minPriceTon: normalizePriceInput(event.target.value),
+                    })
+                  }
+                />
+                <b>TON</b>
+              </div>
+            </label>
+            <label>
+              <span>Maximum</span>
+              <div>
+                <input
+                  inputMode="decimal"
+                  value={draft.maxPriceTon}
+                  placeholder="No maximum"
+                  aria-describedby={error ? "market-filter-error" : undefined}
+                  onChange={(event) =>
+                    onChange({
+                      ...draft,
+                      maxPriceTon: normalizePriceInput(event.target.value),
+                    })
+                  }
+                />
+                <b>TON</b>
+              </div>
+            </label>
+          </div>
+        </fieldset>
+
+        <label className="filter-sort-field">
+          <span>Sort results</span>
+          <select
+            value={draft.sort}
+            onChange={(event) =>
+              onChange({
+                ...draft,
+                sort: event.target.value as MarketSortOrder,
+              })
+            }
+          >
+            <option value="newest">Newest first</option>
+            <option value="price_low">Price: low to high</option>
+            <option value="price_high">Price: high to low</option>
+          </select>
+        </label>
+
+        {error ? (
+          <div id="market-filter-error" className="filter-validation" role="alert">
+            <Info size={16} />
+            {error}
+          </div>
+        ) : (
+          <div className="filter-result-preview" role="status">
+            <Search size={16} />
+            {resultCount} real{" "}
+            {resultCount === 1 ? "listing matches" : "listings match"}
+          </div>
+        )}
+
+        <div className="market-filter-actions">
+          <button type="button" onClick={onClear}>
+            Clear all
+          </button>
+          <button type="submit" disabled={Boolean(error)}>
+            Show {resultCount ?? 0} {resultCount === 1 ? "result" : "results"}
+          </button>
+        </div>
+      </form>
+    </BottomSheet>
   );
 }
 
@@ -1378,23 +1600,60 @@ function BottomSheet({
   children: React.ReactNode;
   title?: string;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    dialogRef.current?.focus();
+    return () => previouslyFocused?.focus();
+  }, [open]);
+
   if (!open) return null;
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         className="bottom-sheet"
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="sheet-handle" />
@@ -1587,13 +1846,13 @@ const initialCreateForm: CreateForm = {
   type: "physical",
   title: "",
   description: "",
-  category: "Other",
+  category: "",
   priceTon: "",
   location: "",
   latitude: undefined,
   longitude: undefined,
   locationRadiusMeters: undefined,
-  delivery: "Arrange in chat",
+  delivery: "",
 };
 
 function CreateSheet({
@@ -1615,6 +1874,7 @@ function CreateSheet({
     ...initialCreateForm,
     section: initialSection,
     type: initialSection === "market" ? "physical" : "service",
+    category: "",
   }));
   const [image, setImage] = useState<File | null>(null);
   const [locationPending, setLocationPending] = useState(false);
@@ -1624,6 +1884,8 @@ function CreateSheet({
       ...current,
       section,
       type: section === "market" ? "physical" : "service",
+      category: "",
+      delivery: "",
       latitude: section === "market" ? undefined : current.latitude,
       longitude: section === "market" ? undefined : current.longitude,
       locationRadiusMeters:
@@ -1789,16 +2051,40 @@ function CreateSheet({
           </label>
           <label>
             <span>Category</span>
-            <input
-              required
-              value={form.category}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  category: event.target.value,
-                }))
-              }
-            />
+            {form.section === "market" ? (
+              <select
+                required
+                value={form.category}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    category: event.target.value,
+                  }))
+                }
+              >
+                <option value="" disabled>
+                  Choose a category
+                </option>
+                {marketCategoryOptions.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                required
+                maxLength={64}
+                value={form.category}
+                placeholder="Trade, care, design, repair…"
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    category: event.target.value,
+                  }))
+                }
+              />
+            )}
           </label>
         </div>
 
@@ -1884,6 +2170,7 @@ function CreateSheet({
           <input
             required
             value={form.delivery}
+            placeholder="Pickup, shipping, download, or timing"
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -2399,6 +2686,13 @@ export default function EzWalletApp() {
   const [favoritePendingIds, setFavoritePendingIds] = useState<string[]>([]);
   const [favoritesAvailable, setFavoritesAvailable] = useState(true);
   const [marketSavedOnly, setMarketSavedOnly] = useState(false);
+  const [marketFilters, setMarketFilters] = useState<MarketFilterForm>({
+    ...defaultMarketFilterForm,
+  });
+  const [marketFilterDraft, setMarketFilterDraft] =
+    useState<MarketFilterForm>({
+      ...defaultMarketFilterForm,
+    });
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [query, setQuery] = useState("");
@@ -2704,26 +2998,59 @@ export default function EzWalletApp() {
       ).length,
     [listings, savedListingSet]
   );
+  const marketTotalListingCount = useMemo(
+    () => listings.filter((listing) => listing.section === "market").length,
+    [listings]
+  );
+  const marketAdvancedFilterCount = useMemo(
+    () => activeMarketFilterCount(marketFilters),
+    [marketFilters]
+  );
 
-  const filteredMarket = useMemo(() => {
-    const normalized = query.toLowerCase().trim();
-    return listings.filter((listing) => {
-      if (listing.section !== "market") return false;
-      const queryMatches =
-        !normalized ||
-        `${listing.title} ${listing.description} ${listing.category}`
-          .toLowerCase()
-          .includes(normalized);
-      const categoryMatches =
-        marketCategory === "All" ||
-        listing.category.toLowerCase() === marketCategory.toLowerCase();
-      const savedMatches =
-        !marketSavedOnly || savedListingSet.has(listing.id);
-      return queryMatches && categoryMatches && savedMatches;
-    });
+  const filteredMarket = useMemo(
+    () =>
+      filterAndSortMarketListings(listings, {
+        query,
+        category: marketCategory,
+        savedOnly: marketSavedOnly,
+        savedListingIds: savedListingSet,
+        filters: marketFilters,
+      }),
+    [
+      listings,
+      marketCategory,
+      marketFilters,
+      marketSavedOnly,
+      query,
+      savedListingSet,
+    ]
+  );
+  const marketFilterDraftPreview = useMemo(() => {
+    try {
+      parseMarketPriceRange(marketFilterDraft);
+      return {
+        error: "",
+        count: filterAndSortMarketListings(listings, {
+          query,
+          category: marketCategory,
+          savedOnly: marketSavedOnly,
+          savedListingIds: savedListingSet,
+          filters: marketFilterDraft,
+        }).length,
+      };
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Choose a valid TON price range.",
+        count: null,
+      };
+    }
   }, [
     listings,
     marketCategory,
+    marketFilterDraft,
     marketSavedOnly,
     query,
     savedListingSet,
@@ -3208,6 +3535,23 @@ export default function EzWalletApp() {
     setQuery("");
     telegram?.HapticFeedback?.impactOccurred("light");
   };
+  const openMarketFilters = () => {
+    setMarketFilterDraft({ ...marketFilters });
+    setSheet("market-filters");
+  };
+  const resetMarketDiscovery = () => {
+    setQuery("");
+    setMarketCategory("All");
+    setMarketSavedOnly(false);
+    setMarketFilters({ ...defaultMarketFilterForm });
+    setMarketFilterDraft({ ...defaultMarketFilterForm });
+  };
+  const applyMarketFilters = () => {
+    if (marketFilterDraftPreview.error) return;
+    setMarketFilters({ ...marketFilterDraft });
+    setSheet(null);
+    telegram?.HapticFeedback?.impactOccurred("light");
+  };
 
   return (
     <div className="page-shell">
@@ -3234,11 +3578,16 @@ export default function EzWalletApp() {
               category={marketCategory}
               setCategory={setMarketCategory}
               onOpen={openListing}
+              onOpenFilters={openMarketFilters}
+              onResetFilters={resetMarketDiscovery}
+              onCreate={() => openCreate("market")}
               savedListingIds={savedListingSet}
               savingListingIds={favoritePendingSet}
               signedIn={Boolean(session)}
               savedOnly={marketSavedOnly}
               savedCount={savedMarketCount}
+              totalListingCount={marketTotalListingCount}
+              advancedFilterCount={marketAdvancedFilterCount}
               favoritesAvailable={favoritesAvailable}
               onToggleSavedOnly={toggleSavedMarket}
               onToggleSave={(listing) => void toggleFavorite(listing)}
@@ -3363,6 +3712,19 @@ export default function EzWalletApp() {
             setSheet("create");
           }}
           onAction={updateListingLifecycle}
+        />
+
+        <MarketFiltersSheet
+          open={sheet === "market-filters"}
+          draft={marketFilterDraft}
+          error={marketFilterDraftPreview.error}
+          resultCount={marketFilterDraftPreview.count}
+          onChange={setMarketFilterDraft}
+          onClear={() =>
+            setMarketFilterDraft({ ...defaultMarketFilterForm })
+          }
+          onClose={() => setSheet(null)}
+          onApply={applyMarketFilters}
         />
 
         {sheet === "create" && (

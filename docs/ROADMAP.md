@@ -55,6 +55,8 @@ funds, external promotion, bot deletion, or unattended account changes.
 ## 4. Marketplace and local work product
 
 - [x] Expand Market into a category-led Facebook Marketplace-style browse flow.
+- [x] Add real-data Market type, exact-price, and sort filters; normalize new
+  listing categories while keeping legacy categories discoverable under Other.
 - [x] Add authenticated, D1-backed saved listings across Market and Work.
 - [ ] Add saved searches.
 - [x] Add owner-only pause, reactivate, and permanent-close listing controls.
