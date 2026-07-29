@@ -43,12 +43,12 @@ export async function POST(request: Request) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `Hi ${firstName} — welcome to EzWallet. Buy, sell, work and pay with your own TON wallet.`,
+        text: `Hi ${firstName} — welcome to Easy Wallet. Buy, sell, work and pay with your own TON wallet.`,
         reply_markup: {
           inline_keyboard: [
             [
               {
-                text: "Open EzWallet",
+                text: "Open Easy Wallet",
                 web_app: { url: appUrl },
               },
             ],

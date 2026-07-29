@@ -93,7 +93,7 @@ export async function authenticateRequest(
   }
   if (user.moderationStatus === "banned") {
     throw new AuthenticationError(
-      "This EzWallet profile has been suspended.",
+      "This Easy Wallet profile has been suspended.",
       403
     );
   }

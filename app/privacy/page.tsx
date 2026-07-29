@@ -1,11 +1,11 @@
 import Link from "next/link";
 
-export const metadata = { title: "Privacy Policy · EzWallet" };
+export const metadata = { title: "Privacy Policy · Easy Wallet" };
 
 export default function PrivacyPage() {
   return (
     <main className="legal-page">
-      <Link href="/" className="legal-back">Back to EzWallet</Link>
+      <Link href="/" className="legal-back">Back to Easy Wallet</Link>
       <p className="eyebrow">Privacy policy</p>
       <h1>Collect less. Explain the rest.</h1>
       <p className="legal-updated">Effective 29 July 2026</p>
@@ -22,7 +22,7 @@ export default function PrivacyPage() {
       <section>
         <h2>Data we never request</h2>
         <p>
-          EzWallet never needs or stores wallet seed phrases, private keys, PINs,
+          Easy Wallet never needs or stores wallet seed phrases, private keys, PINs,
           or Telegram passwords. TON proof verifies control of a public wallet
           address without disclosing its private key.
         </p>

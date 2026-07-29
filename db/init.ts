@@ -57,6 +57,9 @@ const schemaStatements = [
     seller_wallet_address TEXT NOT NULL,
     platform_wallet_address TEXT NOT NULL,
     gross_nano TEXT NOT NULL,
+    buyer_fee_nano TEXT NOT NULL DEFAULT '0',
+    seller_fee_nano TEXT NOT NULL DEFAULT '0',
+    buyer_total_nano TEXT NOT NULL DEFAULT '0',
     platform_fee_nano TEXT NOT NULL,
     seller_amount_nano TEXT NOT NULL,
     fee_bps INTEGER NOT NULL DEFAULT 100,
@@ -335,6 +338,20 @@ export async function ensureDatabase() {
   await database.batch(
     schemaStatements.map((statement) => database.prepare(statement))
   );
+  const dealColumns = await database
+    .prepare("PRAGMA table_info(deals)")
+    .all<{ name: string }>();
+  const existingDealColumns = new Set(
+    dealColumns.results.map((column) => column.name)
+  );
+  const missingDealColumns = [
+    ["buyer_fee_nano", "ALTER TABLE deals ADD buyer_fee_nano TEXT NOT NULL DEFAULT '0'"],
+    ["seller_fee_nano", "ALTER TABLE deals ADD seller_fee_nano TEXT NOT NULL DEFAULT '0'"],
+    ["buyer_total_nano", "ALTER TABLE deals ADD buyer_total_nano TEXT NOT NULL DEFAULT '0'"],
+  ].filter(([name]) => !existingDealColumns.has(name));
+  for (const [, statement] of missingDealColumns) {
+    await database.prepare(statement).run();
+  }
   if (
     getBinding("SEED_DEMO_DATA") === "true" ||
     getBinding("ENVIRONMENT") !== "production"

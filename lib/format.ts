@@ -22,12 +22,28 @@ export function nanoToTon(input: string, maximumFractionDigits = 2) {
   return trimmed ? `${whole}.${trimmed}` : whole.toString();
 }
 
-export function splitPlatformFee(grossNano: bigint) {
-  const platformFeeNano =
-    (grossNano * PLATFORM_FEE_BPS + BPS_DENOMINATOR - 1n) /
+export function calculateTransactionFees(baseNano: bigint) {
+  if (baseNano <= 0n) {
+    throw new Error("The transaction amount must be positive.");
+  }
+
+  const partyFeeNano =
+    (baseNano * PLATFORM_FEE_BPS + BPS_DENOMINATOR - 1n) /
     BPS_DENOMINATOR;
+  if (partyFeeNano >= baseNano) {
+    throw new Error("The transaction amount is too small.");
+  }
+
+  const buyerFeeNano = partyFeeNano;
+  const sellerFeeNano = partyFeeNano;
+  const platformFeeNano = buyerFeeNano + sellerFeeNano;
+
   return {
+    baseNano,
+    buyerFeeNano,
+    sellerFeeNano,
+    buyerTotalNano: baseNano + buyerFeeNano,
     platformFeeNano,
-    sellerAmountNano: grossNano - platformFeeNano,
+    sellerAmountNano: baseNano - sellerFeeNano,
   };
 }

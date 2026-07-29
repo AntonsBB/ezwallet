@@ -10,7 +10,7 @@ import {
   users,
 } from "@/db/schema";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
-import { splitPlatformFee } from "@/lib/format";
+import { calculateTransactionFees } from "@/lib/format";
 import {
   enforceRateLimit,
   RateLimitError,
@@ -146,9 +146,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const grossNano = BigInt(listing.priceNano);
-    const { platformFeeNano, sellerAmountNano } =
-      splitPlatformFee(grossNano);
+    const baseNano = BigInt(listing.priceNano);
+    const {
+      buyerFeeNano,
+      sellerFeeNano,
+      buyerTotalNano,
+      platformFeeNano,
+      sellerAmountNano,
+    } = calculateTransactionFees(baseNano);
     const dealId = crypto.randomUUID();
     const now = new Date().toISOString();
     const [existing] = await db
@@ -182,7 +187,10 @@ export async function POST(request: Request) {
         buyerWalletAddress,
         sellerWalletAddress,
         platformWalletAddress,
-        grossNano: grossNano.toString(),
+        grossNano: baseNano.toString(),
+        buyerFeeNano: buyerFeeNano.toString(),
+        sellerFeeNano: sellerFeeNano.toString(),
+        buyerTotalNano: buyerTotalNano.toString(),
         platformFeeNano: platformFeeNano.toString(),
         sellerAmountNano: sellerAmountNano.toString(),
         feeBps: 100,
@@ -197,7 +205,7 @@ export async function POST(request: Request) {
           dealId,
           accountUserId: buyer.id,
           kind: "buyer_payment",
-          amountNano: `-${grossNano}`,
+          amountNano: `-${buyerTotalNano}`,
           status: "created",
           createdAt: now,
           updatedAt: now,
@@ -229,7 +237,12 @@ export async function POST(request: Request) {
         actorUserId: buyer.id,
         type: "deal_created",
         toStatus: "pending_wallet",
-        detail: JSON.stringify({ listingId: listing.id, feeBps: 100 }),
+        detail: JSON.stringify({
+          listingId: listing.id,
+          feeBps: 100,
+          buyerFeeNano: buyerFeeNano.toString(),
+          sellerFeeNano: sellerFeeNano.toString(),
+        }),
         createdAt: now,
       }),
     ]);
@@ -240,7 +253,10 @@ export async function POST(request: Request) {
           id: dealId,
           listingId: listing.id,
           title: listing.title,
-          grossNano: grossNano.toString(),
+          grossNano: baseNano.toString(),
+          buyerFeeNano: buyerFeeNano.toString(),
+          sellerFeeNano: sellerFeeNano.toString(),
+          buyerTotalNano: buyerTotalNano.toString(),
           platformFeeNano: platformFeeNano.toString(),
           sellerAmountNano: sellerAmountNano.toString(),
           feeBps: 100,

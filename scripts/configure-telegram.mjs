@@ -34,7 +34,7 @@ await telegram("setWebhook", {
 await telegram("setChatMenuButton", {
   menu_button: {
     type: "web_app",
-    text: "Open EzWallet",
+    text: "Open Easy Wallet",
     web_app: { url: origin },
   },
 });

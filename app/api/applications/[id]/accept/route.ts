@@ -10,7 +10,7 @@ import {
   users,
 } from "@/db/schema";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
-import { splitPlatformFee } from "@/lib/format";
+import { calculateTransactionFees } from "@/lib/format";
 import {
   enforceRateLimit,
   noStoreJson,
@@ -142,9 +142,14 @@ export async function POST(
       );
     }
 
-    const grossNano = BigInt(application.offerNano);
-    const { platformFeeNano, sellerAmountNano } =
-      splitPlatformFee(grossNano);
+    const baseNano = BigInt(application.offerNano);
+    const {
+      buyerFeeNano,
+      sellerFeeNano,
+      buyerTotalNano,
+      platformFeeNano,
+      sellerAmountNano,
+    } = calculateTransactionFees(baseNano);
     const dealId = crypto.randomUUID();
     const now = new Date().toISOString();
     await db.batch([
@@ -156,7 +161,10 @@ export async function POST(
         buyerWalletAddress,
         sellerWalletAddress,
         platformWalletAddress,
-        grossNano: grossNano.toString(),
+        grossNano: baseNano.toString(),
+        buyerFeeNano: buyerFeeNano.toString(),
+        sellerFeeNano: sellerFeeNano.toString(),
+        buyerTotalNano: buyerTotalNano.toString(),
         platformFeeNano: platformFeeNano.toString(),
         sellerAmountNano: sellerAmountNano.toString(),
         feeBps: 100,
@@ -171,7 +179,7 @@ export async function POST(
           dealId,
           accountUserId: buyer.id,
           kind: "buyer_payment",
-          amountNano: `-${grossNano}`,
+          amountNano: `-${buyerTotalNano}`,
           status: "created",
           createdAt: now,
           updatedAt: now,
@@ -207,7 +215,12 @@ export async function POST(
         actorUserId: buyer.id,
         type: "application_accepted",
         toStatus: "pending_wallet",
-        detail: JSON.stringify({ applicationId: id }),
+        detail: JSON.stringify({
+          applicationId: id,
+          feeBps: 100,
+          buyerFeeNano: buyerFeeNano.toString(),
+          sellerFeeNano: sellerFeeNano.toString(),
+        }),
         createdAt: now,
       }),
     ]);
@@ -217,7 +230,10 @@ export async function POST(
         deal: {
           id: dealId,
           title: application.listingTitle,
-          grossNano: grossNano.toString(),
+          grossNano: baseNano.toString(),
+          buyerFeeNano: buyerFeeNano.toString(),
+          sellerFeeNano: sellerFeeNano.toString(),
+          buyerTotalNano: buyerTotalNano.toString(),
           platformFeeNano: platformFeeNano.toString(),
           sellerAmountNano: sellerAmountNano.toString(),
         },

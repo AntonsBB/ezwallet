@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { canonicalAppOrigin, telegramBotUrl } from "@/lib/app-url";
 import { EzWalletProviders } from "./providers";
 import EzWalletApp from "./EzWalletApp";
 
@@ -10,11 +11,15 @@ export default async function Home() {
   const protocol =
     requestHeaders.get("x-forwarded-proto") ??
     (host?.includes("localhost") ? "http" : "https");
-  const origin = host ? `${protocol}://${host}` : "https://ezwallet.online";
+  const fallbackOrigin = host
+    ? `${protocol}://${host}`
+    : "https://easywallet.abbrains.xyz";
+  const origin = canonicalAppOrigin(fallbackOrigin);
 
   return (
     <EzWalletProviders
       manifestUrl={`${origin}/tonconnect-manifest.json`}
+      twaReturnUrl={telegramBotUrl()}
     >
       <EzWalletApp />
     </EzWalletProviders>

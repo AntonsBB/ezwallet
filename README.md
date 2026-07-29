@@ -1,6 +1,6 @@
-# EzWallet
+# Easy Wallet
 
-EzWallet is a production-oriented Telegram Mini App for buying and selling
+Easy Wallet is a production-oriented Telegram Mini App for buying and selling
 physical or digital goods, offering services, posting jobs, hiring people, and
 paying directly with TON.
 
@@ -8,8 +8,9 @@ It is intentionally non-custodial:
 
 - Telegram Mini App launch data is verified on the server.
 - Wallet ownership is bound to the Telegram profile with `ton_proof`.
-- Private keys and seed phrases never enter EzWallet.
-- Every paid deal discloses and prepares an immutable 1% platform fee.
+- Private keys and seed phrases never enter Easy Wallet.
+- Every paid deal discloses an immutable 1% buyer fee and 1% seller fee only at
+  checkout.
 - A wallet broadcast is only `payment_submitted`; an independent reconciler
   verifies both expected finalized recipient transfers before the deal advances.
 - D1 stores marketplace state and an append-only deal/ledger event history.
@@ -81,9 +82,10 @@ scheduled trigger for the Worker, then set:
 | --- | --- | --- |
 | `ENVIRONMENT=production` | yes | disables demo seeding |
 | `TON_NETWORK=testnet` | yes at first | use `mainnet` only after testnet sign-off |
-| `PLATFORM_FEE_ADDRESS` | yes | receives exactly 1% of each paid deal |
+| `PLATFORM_FEE_ADDRESS` | yes | receives the disclosed 1% fee from each transaction party |
 | `MINI_APP_URL` | yes | canonical HTTPS deployment URL |
 | `TELEGRAM_BOT_TOKEN` | yes, secret | validates Mini App sessions and runs the bot |
+| `TELEGRAM_BOT_USERNAME` | yes | builds the wallet return link to the dedicated bot |
 | `TELEGRAM_WEBHOOK_SECRET` | yes, secret | authenticates Telegram webhook requests |
 | `RECONCILE_SECRET` | yes, secret | protects manual reconciliation fallback |
 | `TONCENTER_API_KEY` | recommended, secret | raises TON Center limits |
@@ -114,7 +116,7 @@ The helper never prints the bot token or webhook secret.
 
 `pending_wallet → payment_submitted → awaiting_delivery → fulfilled`
 
-- `pending_wallet`: server froze recipients, amount, network, and 1% fee.
+- `pending_wallet`: server froze recipients, amount, network, and both 1% fees.
 - `payment_submitted`: wallet returned a BOC; no payment claim is made.
 - `awaiting_delivery`: the reconciler independently matched both exact
   recipient transfers, amounts, sender, comments, and indexed transaction

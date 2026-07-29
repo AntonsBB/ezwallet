@@ -1,4 +1,4 @@
-# EzWallet architecture
+# Easy Wallet architecture
 
 ## Runtime
 
@@ -53,10 +53,11 @@ Wallet responses are never treated as identity proof without this verification.
 
 ## Payments
 
-EzWallet is non-custodial. A deal quote is created by the Worker using integer nanotons and immutable recipients:
+Easy Wallet is non-custodial. A deal quote is created by the Worker using integer nanotons and immutable recipients:
 
-- seller message: 99% after deterministic rounding;
-- platform message: 1%;
+- buyer total: base price plus the buyer's 1% fee;
+- seller message: base price minus the seller's 1% fee;
+- platform message: the combined buyer and seller fees;
 - both messages contain deal-specific references.
 
 The client submits the Worker-built request to TON Connect. The returned BoC means the wallet signed/broadcast a message; it does not prove final payment. The backend records it as submitted and independently confirms the finalized transfers before changing the deal to `payment_confirmed`.

@@ -1,6 +1,6 @@
 # Security policy
 
-EzWallet handles marketplace identity, user-generated content, and non-custodial cryptocurrency payment metadata. Security reports are welcome.
+Easy Wallet handles marketplace identity, user-generated content, and non-custodial cryptocurrency payment metadata. Security reports are welcome.
 
 ## Reporting a vulnerability
 
@@ -41,7 +41,7 @@ Only the latest production deployment and the default branch receive security up
 
 ## Security model
 
-- EzWallet is non-custodial and never requests seed phrases or private keys.
+- Easy Wallet is non-custodial and never requests seed phrases or private keys.
 - A wallet-signed submission is not considered confirmed payment until independently verified on-chain.
 - Telegram identity and TON wallet ownership are distinct checks.
 - Government-ID, NFC passport, custody, fiat exchange, and tax-reporting systems are not part of the initial public release.

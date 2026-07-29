@@ -7,6 +7,7 @@ function bindings() {
     DB?: D1Database;
     MEDIA?: R2Bucket;
     TELEGRAM_BOT_TOKEN?: string;
+    TELEGRAM_BOT_USERNAME?: string;
     TELEGRAM_WEBHOOK_SECRET?: string;
     MINI_APP_URL?: string;
     PLATFORM_FEE_ADDRESS?: string;
@@ -20,6 +21,7 @@ function bindings() {
 
 type StringBindingName =
   | "TELEGRAM_BOT_TOKEN"
+  | "TELEGRAM_BOT_USERNAME"
   | "TELEGRAM_WEBHOOK_SECRET"
   | "MINI_APP_URL"
   | "PLATFORM_FEE_ADDRESS"

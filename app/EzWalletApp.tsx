@@ -34,13 +34,14 @@ import {
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { nanoToTon } from "@/lib/format";
+import { calculateTransactionFees, nanoToTon } from "@/lib/format";
 
 type Tab = "market" | "work" | "wallet" | "profile";
 type SheetName =
   | "listing"
   | "create"
   | "apply"
+  | "checkout"
   | "payment"
   | "profile"
   | "report"
@@ -92,6 +93,9 @@ type Deal = {
   title: string;
   imageUrl: string | null;
   grossNano: string;
+  buyerFeeNano: string;
+  sellerFeeNano: string;
+  buyerTotalNano: string;
   platformFeeNano: string;
   sellerAmountNano: string;
   status: string;
@@ -169,14 +173,14 @@ function statusLabel(status: string) {
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="brand" aria-label="EzWallet">
+    <div className="brand" aria-label="Easy Wallet">
       <img
         className="brand-mark"
         src="/brand/ezwallet-logo.png"
         alt=""
         aria-hidden="true"
       />
-      {!compact && <span>EzWallet</span>}
+      {!compact && <span>Easy Wallet</span>}
     </div>
   );
 }
@@ -457,7 +461,7 @@ function MarketScreen({
           <ShieldCheck size={22} />
         </div>
         <div>
-          <strong>Your keys never enter EzWallet.</strong>
+          <strong>Your keys never enter Easy Wallet.</strong>
           <p>
             You review and approve every TON transfer inside your connected
             wallet.
@@ -578,6 +582,9 @@ function WalletScreen({
   const submitted = deals.filter(
     (deal) => deal.status === "payment_submitted"
   ).length;
+  const completed = deals.filter(
+    (deal) => deal.status === "fulfilled"
+  ).length;
 
   return (
     <main className="screen wallet-screen">
@@ -590,7 +597,7 @@ function WalletScreen({
         </div>
         <h1>{walletConnected ? "Wallet ready." : "Your wallet stays yours."}</h1>
         <p>
-          EzWallet never stores a seed phrase, private key or spendable balance.
+          Easy Wallet never stores a seed phrase, private key or spendable balance.
         </p>
         {walletConnected ? (
           <div className="connected-wallet">
@@ -627,8 +634,8 @@ function WalletScreen({
           <b>{submitted}</b>
         </div>
         <div>
-          <span>Platform fee</span>
-          <b>1%</b>
+          <span>Completed</span>
+          <b>{completed}</b>
         </div>
       </section>
 
@@ -705,7 +712,7 @@ function WalletScreen({
       <section className="ledger-note">
         <Info size={17} />
         <p>
-          The EzWallet ledger records deal intent and wallet submissions. TON
+          The Easy Wallet ledger records deal intent and wallet submissions. TON
           remains the source of truth for final settlement.
         </p>
       </section>
@@ -973,14 +980,6 @@ function ListingSheet({
           </div>
         </div>
 
-        <div className="fee-disclosure">
-          <ShieldCheck size={17} />
-          <p>
-            One wallet approval sends 99% to the seller and the transparent 1%
-            platform fee. The two TON recipient messages settle independently.
-          </p>
-        </div>
-
         {!isOwner && (
           <button
             type="button"
@@ -1223,7 +1222,7 @@ function CreateSheet({
         {!canPublish && (
           <div className="form-notice">
             <Info size={17} />
-            Open EzWallet from Telegram to publish under a verified profile.
+            Open Easy Wallet from Telegram to publish under a verified profile.
           </div>
         )}
 
@@ -1315,6 +1314,9 @@ function PaymentSuccessSheet({
   deal: {
     title: string;
     grossNano: string;
+    buyerFeeNano: string;
+    sellerFeeNano: string;
+    buyerTotalNano: string;
     platformFeeNano: string;
     sellerAmountNano: string;
   } | null;
@@ -1329,7 +1331,7 @@ function PaymentSuccessSheet({
         <span className="eyebrow">Wallet submission recorded</span>
         <h2>{deal?.title}</h2>
         <p>
-          Your wallet broadcast the transaction. EzWallet will keep the deal in
+          Your wallet broadcast the transaction. Easy Wallet will keep the deal in
           confirming status until recipient transfers are observed on TON.
         </p>
         <div className="payment-breakdown">
@@ -1338,16 +1340,86 @@ function PaymentSuccessSheet({
             <b>{deal && nanoToTon(deal.sellerAmountNano, 4)} TON</b>
           </div>
           <div>
-            <span>Platform fee · 1%</span>
-            <b>{deal && nanoToTon(deal.platformFeeNano, 4)} TON</b>
+            <span>Your fee · 1%</span>
+            <b>{deal && nanoToTon(deal.buyerFeeNano, 4)} TON</b>
+          </div>
+          <div>
+            <span>Seller fee · 1%</span>
+            <b>{deal && nanoToTon(deal.sellerFeeNano, 4)} TON</b>
           </div>
           <div>
             <span>Total approved</span>
-            <b>{deal && nanoToTon(deal.grossNano, 4)} TON</b>
+            <b>{deal && nanoToTon(deal.buyerTotalNano, 4)} TON</b>
           </div>
         </div>
         <button type="button" className="primary-action" onClick={onClose}>
           View wallet activity <ArrowRight size={18} />
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+function PaymentQuoteSheet({
+  open,
+  listing,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  listing: Listing | null;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (listing: Listing) => Promise<void>;
+}) {
+  if (!listing) return null;
+  const quote = calculateTransactionFees(BigInt(listing.priceNano));
+
+  return (
+    <BottomSheet open={open} onClose={onClose} title="Review payment">
+      <div className="payment-success">
+        <span className="eyebrow">Transparent checkout</span>
+        <h2>{listing.title}</h2>
+        <p>
+          Both parties contribute 1% only when this transaction is approved.
+          Easy Wallet never takes custody of your funds.
+        </p>
+        <div className="payment-breakdown">
+          <div>
+            <span>Item or service price</span>
+            <b>{nanoToTon(quote.baseNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Your fee · 1%</span>
+            <b>{nanoToTon(quote.buyerFeeNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>You approve</span>
+            <b>{nanoToTon(quote.buyerTotalNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Seller fee · 1%</span>
+            <b>{nanoToTon(quote.sellerFeeNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Seller receives</span>
+            <b>{nanoToTon(quote.sellerAmountNano.toString(), 4)} TON</b>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="primary-action"
+          disabled={busy}
+          onClick={() => void onConfirm(listing)}
+        >
+          {busy
+            ? "Preparing wallet…"
+            : `Approve ${nanoToTon(quote.buyerTotalNano.toString(), 4)} TON`}
+          {!busy && <ArrowRight size={18} />}
+        </button>
+        <button type="button" className="text-action" onClick={onClose}>
+          Back to listing
         </button>
       </div>
     </BottomSheet>
@@ -1523,6 +1595,9 @@ export default function EzWalletApp() {
   const [paymentDeal, setPaymentDeal] = useState<{
     title: string;
     grossNano: string;
+    buyerFeeNano: string;
+    sellerFeeNano: string;
+    buyerTotalNano: string;
     platformFeeNano: string;
     sellerAmountNano: string;
   } | null>(null);
@@ -1620,7 +1695,7 @@ export default function EzWalletApp() {
     const timer = window.setTimeout(() => {
       void Promise.all([loadBootstrap(), loadSession()]).catch((error) => {
         showToast(
-          error instanceof Error ? error.message : "EzWallet could not start.",
+          error instanceof Error ? error.message : "Easy Wallet could not start.",
           "error"
         );
       });
@@ -1813,7 +1888,7 @@ export default function EzWalletApp() {
 
   const startPayment = async (listing: Listing) => {
     if (!session) {
-      showToast("Open EzWallet from Telegram to start a verified deal.", "error");
+      showToast("Open Easy Wallet from Telegram to start a verified deal.", "error");
       return;
     }
     if (!wallet || !walletAddress) {
@@ -1836,6 +1911,11 @@ export default function EzWalletApp() {
       return;
     }
 
+    setSelectedListing(listing);
+    setSheet("checkout");
+  };
+
+  const confirmPayment = async (listing: Listing) => {
     setBusy(true);
     try {
       const dealResponse = await apiFetch("/api/deals", {
@@ -1848,6 +1928,9 @@ export default function EzWalletApp() {
           id: string;
           title: string;
           grossNano: string;
+          buyerFeeNano: string;
+          sellerFeeNano: string;
+          buyerTotalNano: string;
           platformFeeNano: string;
           sellerAmountNano: string;
         };
@@ -1891,7 +1974,7 @@ export default function EzWalletApp() {
 
   const openApply = (listing: Listing) => {
     if (!session) {
-      showToast("Open EzWallet from Telegram to apply.", "error");
+      showToast("Open Easy Wallet from Telegram to apply.", "error");
       return;
     }
     setSelectedListing(listing);
@@ -2156,6 +2239,14 @@ export default function EzWalletApp() {
             setSheet(null);
             setTab("wallet");
           }}
+        />
+
+        <PaymentQuoteSheet
+          open={sheet === "checkout"}
+          listing={selectedListing}
+          busy={busy}
+          onClose={() => setSheet("listing")}
+          onConfirm={confirmPayment}
         />
 
         {toast && <Toast message={toast.message} tone={toast.tone} />}

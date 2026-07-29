@@ -1,9 +1,11 @@
+import { canonicalAppOrigin } from "@/lib/app-url";
+
 export function GET(request: Request) {
-  const origin = new URL(request.url).origin;
+  const origin = canonicalAppOrigin(request.url);
   return Response.json(
     {
       url: origin,
-      name: "EzWallet",
+      name: "Easy Wallet",
       iconUrl: `${origin}/brand/icon-180.png`,
       termsOfUseUrl: `${origin}/terms`,
       privacyPolicyUrl: `${origin}/privacy`,
@@ -11,7 +13,8 @@ export function GET(request: Request) {
     {
       headers: {
         "access-control-allow-origin": "*",
-        "cache-control": "public, max-age=300",
+        "cache-control": "public, max-age=300, stale-while-revalidate=3600",
+        "content-type": "application/json; charset=utf-8",
       },
     }
   );

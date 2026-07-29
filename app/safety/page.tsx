@@ -1,20 +1,20 @@
 import Link from "next/link";
 
-export const metadata = { title: "Safety · EzWallet" };
+export const metadata = { title: "Safety · Easy Wallet" };
 
 export default function SafetyPage() {
   return (
     <main className="legal-page">
-      <Link href="/" className="legal-back">Back to EzWallet</Link>
+      <Link href="/" className="legal-back">Back to Easy Wallet</Link>
       <p className="eyebrow">Safety centre</p>
       <h1>Pause before you approve.</h1>
       <section>
         <h2>Protect your wallet</h2>
         <p>
-          EzWallet will never ask for a seed phrase or private key. Read every
-          TON Connect confirmation, confirm the network, and verify both the
-          seller payment and the disclosed 1% fee. Disconnect unfamiliar
-          sessions from your wallet.
+          Easy Wallet will never ask for a seed phrase or private key. Read every
+          TON Connect confirmation, confirm the network, and verify the seller
+          payment plus the disclosed 1% fee charged to each party. Disconnect
+          unfamiliar sessions from your wallet.
         </p>
       </section>
       <section>
@@ -29,7 +29,7 @@ export default function SafetyPage() {
         <h2>Payments are not escrowed</h2>
         <p>
           Funds go directly from the buyer to the seller and fee wallet.
-          EzWallet independently checks the expected finalized transfers but
+          Easy Wallet independently checks the expected finalized transfers but
           cannot reverse them. Do not approve a transfer based only on a chat
           message or screenshot.
         </p>

@@ -15,6 +15,13 @@
       "when": 1785307576669,
       "tag": "0001_cute_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785316000000,
+      "tag": "0002_two_sided_fees",
+      "breakpoints": true
     }
   ]
 }
