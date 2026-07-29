@@ -5,8 +5,15 @@ export function canonicalAppOrigin(fallback: string) {
   if (!configured) return new URL(fallback).origin;
 
   const url = new URL(configured);
-  if (url.protocol !== "https:") {
-    throw new Error("MINI_APP_URL must use HTTPS.");
+  const isLoopback =
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "[::1]";
+  const isProduction = getBinding("ENVIRONMENT") === "production";
+  if (url.protocol !== "https:" && (!isLoopback || isProduction)) {
+    throw new Error(
+      "MINI_APP_URL must use HTTPS outside local development."
+    );
   }
   return url.origin;
 }

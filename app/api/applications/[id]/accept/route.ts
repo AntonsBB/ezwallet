@@ -1,4 +1,4 @@
-import { Address, beginCell } from "@ton/core";
+import { Address } from "@ton/core";
 import { and, eq, inArray } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
 import {
@@ -12,6 +12,10 @@ import {
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
 import { calculateTransactionFees } from "@/lib/format";
 import {
+  buildNativeTonEscrow,
+  DEFAULT_DELIVERY_WINDOW_SECONDS,
+} from "@/lib/ton-escrow";
+import {
   enforceRateLimit,
   noStoreJson,
   RateLimitError,
@@ -20,18 +24,22 @@ import {
 
 const LOCAL_TESTNET_FEE_ADDRESS =
   "kQBERERERERERERERERERERERERERERERERERERERERERNHq";
-
-function payloadFor(comment: string) {
-  return beginCell()
-    .storeUint(0, 32)
-    .storeStringTail(comment)
-    .endCell()
-    .toBoc()
-    .toString("base64");
-}
+const LOCAL_TESTNET_ARBITRATOR_ADDRESS =
+  "0QBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVaVg";
 
 function normalizeAddress(value: string, testnet: boolean) {
   return Address.parse(value).toString({ bounceable: false, testOnly: testnet });
+}
+
+function isActiveDealConflict(error: unknown) {
+  const message =
+    error instanceof Error
+      ? `${error.message} ${String(error.cause ?? "")}`
+      : String(error);
+  return (
+    message.includes("deals_listing_active_idx") ||
+    message.includes("UNIQUE constraint failed: deals.listing_id")
+  );
 }
 
 export async function POST(
@@ -106,10 +114,16 @@ export async function POST(
     );
     const feeAddress =
       getBinding("PLATFORM_FEE_ADDRESS") ??
-      (localPreview ? LOCAL_TESTNET_FEE_ADDRESS : undefined);
-    if (!feeAddress) {
+      (localPreview && testnet ? LOCAL_TESTNET_FEE_ADDRESS : undefined);
+    const arbitratorAddress =
+      getBinding("ESCROW_ARBITRATOR_ADDRESS") ??
+      (localPreview && testnet ? LOCAL_TESTNET_ARBITRATOR_ADDRESS : undefined);
+    if (!feeAddress || !arbitratorAddress) {
       return noStoreJson(
-        { error: "Payments are paused until the platform fee wallet is configured." },
+        {
+          error:
+            "Payments are paused until the fee and escrow arbitrator wallets are configured.",
+        },
         { status: 503 }
       );
     }
@@ -120,17 +134,21 @@ export async function POST(
       testnet
     );
     const platformWalletAddress = normalizeAddress(feeAddress, testnet);
+    const arbitratorWalletAddress = normalizeAddress(
+      arbitratorAddress,
+      testnet
+    );
     const [existing] = await db
       .select({ id: deals.id })
       .from(deals)
       .where(
         and(
           eq(deals.listingId, application.listingId),
-          eq(deals.buyerId, buyer.id),
           inArray(deals.status, [
             "pending_wallet",
             "payment_submitted",
             "awaiting_delivery",
+            "disputed",
           ])
         )
       )
@@ -152,15 +170,35 @@ export async function POST(
     } = calculateTransactionFees(baseNano);
     const dealId = crypto.randomUUID();
     const now = new Date().toISOString();
+    const deliveryDeadlineUnix =
+      Math.floor(Date.now() / 1000) + DEFAULT_DELIVERY_WINDOW_SECONDS;
+    const escrow = buildNativeTonEscrow({
+      dealId,
+      buyerAddress: buyerWalletAddress,
+      sellerAddress: sellerWalletAddress,
+      arbitratorAddress: arbitratorWalletAddress,
+      platformAddress: platformWalletAddress,
+      baseAmountNano: baseNano,
+      buyerFeeNano,
+      sellerFeeNano,
+      buyerTotalNano,
+      sellerAmountNano,
+      platformFeeNano,
+      deliveryDeadlineUnix,
+      network,
+    });
     await db.batch([
       db.insert(deals).values({
         id: dealId,
         listingId: application.listingId,
+        applicationId: application.id,
         buyerId: buyer.id,
         sellerId: application.applicantId,
         buyerWalletAddress,
         sellerWalletAddress,
         platformWalletAddress,
+        arbitratorWalletAddress,
+        asset: "TON",
         grossNano: baseNano.toString(),
         buyerFeeNano: buyerFeeNano.toString(),
         sellerFeeNano: sellerFeeNano.toString(),
@@ -169,6 +207,13 @@ export async function POST(
         sellerAmountNano: sellerAmountNano.toString(),
         feeBps: 100,
         network,
+        escrowAddress: escrow.address,
+        escrowCodeHash: escrow.codeHash,
+        escrowDataHash: escrow.dataHash,
+        escrowFundingAmountNano: escrow.fundingAmountNano.toString(),
+        escrowStatus: "awaiting_funding",
+        deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
+        reviewWindowSeconds: escrow.reviewWindowSeconds,
         status: "pending_wallet",
         createdAt: now,
         updatedAt: now,
@@ -220,6 +265,8 @@ export async function POST(
           feeBps: 100,
           buyerFeeNano: buyerFeeNano.toString(),
           sellerFeeNano: sellerFeeNano.toString(),
+          escrowAddress: escrow.address,
+          asset: "TON",
         }),
         createdAt: now,
       }),
@@ -236,6 +283,11 @@ export async function POST(
           buyerTotalNano: buyerTotalNano.toString(),
           platformFeeNano: platformFeeNano.toString(),
           sellerAmountNano: sellerAmountNano.toString(),
+          asset: "TON",
+          escrowAddress: escrow.address,
+          escrowFundingAmountNano: escrow.fundingAmountNano.toString(),
+          deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
+          reviewWindowSeconds: escrow.reviewWindowSeconds,
         },
         transaction: {
           validUntil: Math.floor(Date.now() / 1000) + 300,
@@ -243,14 +295,10 @@ export async function POST(
           from: buyerWalletAddress,
           messages: [
             {
-              address: sellerWalletAddress,
-              amount: sellerAmountNano.toString(),
-              payload: payloadFor(`EZW:${dealId}:SELLER`),
-            },
-            {
-              address: platformWalletAddress,
-              amount: platformFeeNano.toString(),
-              payload: payloadFor(`EZW:${dealId}:FEE`),
+              address: escrow.address,
+              amount: escrow.fundingAmountNano.toString(),
+              stateInit: escrow.stateInit,
+              payload: escrow.fundingPayload,
             },
           ],
         },
@@ -259,6 +307,12 @@ export async function POST(
     );
   } catch (error) {
     if (error instanceof RateLimitError) return rateLimitResponse(error);
+    if (isActiveDealConflict(error)) {
+      return noStoreJson(
+        { error: "This job already has an active deal." },
+        { status: 409 }
+      );
+    }
     return authErrorResponse(error);
   }
 }

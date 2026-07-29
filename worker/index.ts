@@ -6,6 +6,19 @@ import { reconcilePendingDeals } from "../lib/ton-payment";
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  MEDIA?: R2Bucket;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_BOT_USERNAME?: string;
+  TELEGRAM_WEBHOOK_SECRET?: string;
+  MINI_APP_URL?: string;
+  PLATFORM_FEE_ADDRESS?: string;
+  ESCROW_ARBITRATOR_ADDRESS?: string;
+  ESCROW_ARBITRATOR_TELEGRAM_ID?: string;
+  TON_NETWORK?: string;
+  TONCENTER_API_KEY?: string;
+  RECONCILE_SECRET?: string;
+  ENVIRONMENT?: string;
+  SEED_DEMO_DATA?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -26,7 +39,7 @@ function withSecurityHeaders(response: Response) {
   secured.headers.set("referrer-policy", "strict-origin-when-cross-origin");
   secured.headers.set(
     "permissions-policy",
-    "camera=(), microphone=(), geolocation=(), payment=()"
+    "camera=(), microphone=(), geolocation=(self), payment=()"
   );
   secured.headers.set("cross-origin-opener-policy", "same-origin-allow-popups");
   secured.headers.set(

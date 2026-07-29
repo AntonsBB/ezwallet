@@ -38,9 +38,16 @@ export async function GET(request: Request) {
       .orderBy(desc(listings.createdAt));
 
     const url = new URL(request.url);
+    const localPreview = ["localhost", "127.0.0.1", "terminal.local"].includes(
+      url.hostname
+    );
+    const testnet = getBinding("TON_NETWORK") !== "mainnet";
     const hasFeeAddress =
       Boolean(getBinding("PLATFORM_FEE_ADDRESS")) ||
-      ["localhost", "127.0.0.1", "terminal.local"].includes(url.hostname);
+      (localPreview && testnet);
+    const hasArbitratorAddress =
+      Boolean(getBinding("ESCROW_ARBITRATOR_ADDRESS")) ||
+      (localPreview && testnet);
 
     return Response.json({
       listings: rows,
@@ -48,7 +55,7 @@ export async function GET(request: Request) {
         feeBps: 100,
         network:
           getBinding("TON_NETWORK") === "mainnet" ? "mainnet" : "testnet",
-        paymentsReady: hasFeeAddress,
+        paymentsReady: hasFeeAddress && hasArbitratorAddress,
         telegramReady: Boolean(getBinding("TELEGRAM_BOT_TOKEN")),
       },
     });

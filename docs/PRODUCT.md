@@ -16,7 +16,9 @@ The wallet supports the marketplace. Easy Wallet never receives seed phrases, st
 3. Identity collection is minimized. Telegram authentication identifies the account; TON proof binds a wallet; government-document verification is not implemented without a qualified provider and a separate legal/security review.
 4. Every paid deal charges 1% to the buyer and 1% to the seller, disclosed only
    in the transaction review and wallet-approval flow.
-5. A browser response never proves payment. Payment records remain pending until the backend confirms the expected on-chain transfers.
+5. A browser response never proves payment. Payment records remain pending until
+   the backend confirms the expected escrow deployment, funding, and subsequent
+   on-chain state transitions.
 6. Reputation comes only from completed deals and cannot be purchased.
 7. The platform supports lawful trade and recordkeeping; it does not promise anonymity from legal obligations or tax-free exchange.
 
@@ -44,10 +46,13 @@ The production interface keeps the source identity while removing the old presen
 4. Open a listing and inspect seller reputation, delivery, price, and safety notes.
 5. Connect and verify a TON wallet.
 6. Review an immutable quote showing the base price, 1% buyer fee, 1% seller fee, buyer total, seller proceeds, recipients, and network.
-7. Approve a two-recipient transaction in the wallet.
+7. Approve one transaction that atomically deploys and funds the deal's
+   deterministic escrow contract.
 8. Easy Wallet records the signed submission as pending.
-9. The payment monitor confirms the expected seller and platform transfers on-chain.
-10. Buyer and seller coordinate delivery, mark completion, and may review each other.
+9. The payment monitor confirms the expected contract code, immutable terms,
+   sender, amount, and funding payload on-chain.
+10. Seller marks delivery on-chain. Buyer confirms release or opens a dispute,
+    and both parties may review after verified settlement.
 
 ### Find work
 
@@ -79,24 +84,33 @@ The production interface keeps the source identity while removing the old presen
 - `seller_proceeds = base_price - seller_fee`.
 - `platform_fee = buyer_fee + seller_fee`.
 - The quote is stored when a deal is created and is not recalculated from later listing edits.
-- The transaction request contains seller proceeds and platform fee as separate messages.
-- A unique deal reference is included for backend matching.
-- The platform marks payment confirmed only after both expected transfers are finalized.
+- The funding request contains the deterministic escrow `StateInit`, exact
+  funding amount, and a deal-specific funding message.
+- The contract stores the buyer, seller, arbitrator, platform recipient,
+  deadlines, price, fees, and deal identifier as immutable terms.
+- The platform marks funding confirmed only after the contract code, state,
+  sender, amount, and message are independently verified.
+- Settlement pays fixed seller proceeds and the combined platform fee. Any
+  remaining reserve is returned to the buyer.
 - Rounding is deterministic and covered by automated tests.
 
 ## Deal lifecycle
 
-`pending_wallet` → `payment_submitted` → `payment_confirmed` → `in_progress` → `delivered` → `completed`
+`awaiting_funding` → `funded` → `delivered` → `released`
 
 Alternative terminal or review states:
 
-- `expired`
 - `cancelled`
-- `payment_failed`
 - `disputed`
 - `refunded`
 
-Only valid transitions are accepted by the API. Each transition is recorded in an append-only deal event log.
+Only valid transitions are accepted by the API and the escrow contract. An
+expired undelivered escrow can be refunded; a delivered escrow can be released
+after the review window; a disputed escrow requires the configured arbitrator.
+Each prepared and submitted chain action is recorded for reconciliation.
+An unfunded request is cancelled automatically only after its wallet window has
+elapsed and an available TON provider finds no matching finalized funding
+transaction; this avoids stranding funds after a lost browser callback.
 
 ## Safety and moderation
 
@@ -105,7 +119,9 @@ Only valid transitions are accepted by the API. Each transition is recorded in a
 - hide paused, closed, moderated, or sold posts from discovery;
 - rate and review only after a completed deal;
 - preserve reports and financial audit records even when public content is removed;
-- disclose that EzWallet is not an escrow or custody provider unless a separately audited escrow contract is introduced;
+- disclose that Easy Wallet is non-custodial, that the escrow contract is
+  testnet-only until independently reviewed, and that dispute arbitration is a
+  trusted operational role;
 - prohibit illegal goods, fraud, stolen assets, impersonation, harassment, and attempts to bypass platform safety controls.
 
 ## Launch acceptance criteria
@@ -116,6 +132,8 @@ Only valid transitions are accepted by the API. Each transition is recorded in a
 - Every payable deal displays and records the fixed 1% fee for each party only
   at transaction time.
 - Payment submissions are not presented as confirmed before backend verification.
+- Escrow funding, delivery, release, refund, expiry, and dispute scenarios pass
+  emulator and application-level tests.
 - Secrets are absent from source control.
 - Database migrations, Worker types, lint, typecheck, unit/API tests, production build, browser journeys, accessibility checks, visual QA, and security scan pass.
 - A public GitHub repository contains setup, deployment, threat/safety, and contributor documentation.

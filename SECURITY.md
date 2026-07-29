@@ -23,7 +23,9 @@ High-priority areas include:
 - Telegram Mini App init-data validation or replay;
 - session fixation, CSRF, authorization, or IDOR;
 - TON proof validation or wallet/account substitution;
-- payment amount, recipient, fee, network, or status manipulation;
+- escrow code/data substitution, payment amount, recipient, fee, deadline,
+  network, action, or status manipulation;
+- unauthorized delivery, release, refund, or dispute resolution;
 - duplicate or replayed deals and transactions;
 - SQL injection or unsafe query construction;
 - unrestricted uploads, stored XSS, content-sniffing, or object access;
@@ -42,6 +44,9 @@ Only the latest production deployment and the default branch receive security up
 ## Security model
 
 - Easy Wallet is non-custodial and never requests seed phrases or private keys.
-- A wallet-signed submission is not considered confirmed payment until independently verified on-chain.
+- A wallet-signed submission is not considered confirmed funding or settlement
+  until independently verified on-chain.
+- Native-TON escrow remains testnet-only until the contract and reconciliation
+  paths receive independent security review and end-to-end adversarial testing.
 - Telegram identity and TON wallet ownership are distinct checks.
 - Government-ID, NFC passport, custody, fiat exchange, and tax-reporting systems are not part of the initial public release.

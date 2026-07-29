@@ -109,6 +109,7 @@ export const deals = sqliteTable(
     listingId: text("listing_id")
       .notNull()
       .references(() => listings.id),
+    applicationId: text("application_id").references(() => applications.id),
     buyerId: integer("buyer_id")
       .notNull()
       .references(() => users.id),
@@ -118,6 +119,8 @@ export const deals = sqliteTable(
     buyerWalletAddress: text("buyer_wallet_address").notNull(),
     sellerWalletAddress: text("seller_wallet_address").notNull(),
     platformWalletAddress: text("platform_wallet_address").notNull(),
+    arbitratorWalletAddress: text("arbitrator_wallet_address"),
+    asset: text("asset", { enum: ["TON"] }).notNull().default("TON"),
     grossNano: text("gross_nano").notNull(),
     buyerFeeNano: text("buyer_fee_nano").notNull().default("0"),
     sellerFeeNano: text("seller_fee_nano").notNull().default("0"),
@@ -126,6 +129,28 @@ export const deals = sqliteTable(
     sellerAmountNano: text("seller_amount_nano").notNull(),
     feeBps: integer("fee_bps").notNull().default(100),
     network: text("network", { enum: ["mainnet", "testnet"] }).notNull(),
+    escrowAddress: text("escrow_address"),
+    escrowCodeHash: text("escrow_code_hash"),
+    escrowDataHash: text("escrow_data_hash"),
+    escrowFundingAmountNano: text("escrow_funding_amount_nano"),
+    escrowFundingTxHash: text("escrow_funding_tx_hash"),
+    escrowSettlementTxHash: text("escrow_settlement_tx_hash"),
+    escrowStatus: text("escrow_status", {
+      enum: [
+        "legacy",
+        "awaiting_funding",
+        "funded",
+        "delivered",
+        "disputed",
+        "released",
+        "refunded",
+      ],
+    })
+      .notNull()
+      .default("legacy"),
+    deliveryDeadlineUnix: integer("delivery_deadline_unix"),
+    reviewWindowSeconds: integer("review_window_seconds"),
+    reviewDeadlineUnix: integer("review_deadline_unix"),
     status: text("status", {
       enum: [
         "pending_wallet",
@@ -151,6 +176,55 @@ export const deals = sqliteTable(
   (table) => [
     index("deals_buyer_idx").on(table.buyerId, table.createdAt),
     index("deals_seller_idx").on(table.sellerId, table.createdAt),
+    uniqueIndex("deals_listing_active_idx")
+      .on(table.listingId)
+      .where(
+        sql`${table.status} IN ('pending_wallet', 'payment_submitted', 'awaiting_delivery', 'disputed')`
+      ),
+    uniqueIndex("deals_escrow_address_idx").on(table.escrowAddress),
+  ]
+);
+
+export const dealChainActions = sqliteTable(
+  "deal_chain_actions",
+  {
+    id: text("id").primaryKey(),
+    dealId: text("deal_id")
+      .notNull()
+      .references(() => deals.id),
+    actorUserId: integer("actor_user_id").references(() => users.id),
+    actorWalletAddress: text("actor_wallet_address").notNull(),
+    kind: text("kind", {
+      enum: [
+        "mark_delivered",
+        "confirm_received",
+        "open_dispute",
+        "refund_expired",
+        "release_after_review",
+        "resolve_release",
+        "resolve_refund",
+      ],
+    }).notNull(),
+    queryId: text("query_id").notNull(),
+    detailHash: text("detail_hash").notNull().default("0"),
+    payloadBase64: text("payload_base64").notNull(),
+    messageValueNano: text("message_value_nano").notNull(),
+    status: text("status", {
+      enum: ["prepared", "submitted", "confirmed", "failed", "expired"],
+    })
+      .notNull()
+      .default("prepared"),
+    transactionRef: text("transaction_ref"),
+    submissionBocDigest: text("submission_boc_digest"),
+    txHash: text("tx_hash"),
+    submittedAt: text("submitted_at"),
+    confirmedAt: text("confirmed_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("deal_chain_actions_deal_idx").on(table.dealId, table.createdAt),
+    index("deal_chain_actions_status_idx").on(table.status, table.submittedAt),
   ]
 );
 

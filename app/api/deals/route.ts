@@ -1,4 +1,4 @@
-import { Address, beginCell } from "@ton/core";
+import { Address } from "@ton/core";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getBinding, getDb } from "@/db";
@@ -12,6 +12,10 @@ import {
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
 import { calculateTransactionFees } from "@/lib/format";
 import {
+  buildNativeTonEscrow,
+  DEFAULT_DELIVERY_WINDOW_SECONDS,
+} from "@/lib/ton-escrow";
+import {
   enforceRateLimit,
   RateLimitError,
   rateLimitResponse,
@@ -23,21 +27,25 @@ const createDealSchema = z.object({
 
 const LOCAL_TESTNET_FEE_ADDRESS =
   "kQBERERERERERERERERERERERERERERERERERERERERERNHq";
-
-function payloadFor(comment: string) {
-  return beginCell()
-    .storeUint(0, 32)
-    .storeStringTail(comment)
-    .endCell()
-    .toBoc()
-    .toString("base64");
-}
+const LOCAL_TESTNET_ARBITRATOR_ADDRESS =
+  "0QBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVaVg";
 
 function normalizeAddress(value: string, testnet: boolean) {
   return Address.parse(value).toString({
     bounceable: false,
     testOnly: testnet,
   });
+}
+
+function isActiveDealConflict(error: unknown) {
+  const message =
+    error instanceof Error
+      ? `${error.message} ${String(error.cause ?? "")}`
+      : String(error);
+  return (
+    message.includes("deals_listing_active_idx") ||
+    message.includes("UNIQUE constraint failed: deals.listing_id")
+  );
 }
 
 export async function POST(request: Request) {
@@ -114,13 +122,20 @@ export async function POST(request: Request) {
     const testnet = network === "testnet";
     const configuredFeeAddress = getBinding("PLATFORM_FEE_ADDRESS");
     const feeAddress =
-      configuredFeeAddress ?? (localPreview ? LOCAL_TESTNET_FEE_ADDRESS : null);
+      configuredFeeAddress ??
+      (localPreview && testnet ? LOCAL_TESTNET_FEE_ADDRESS : null);
+    const configuredArbitratorAddress = getBinding(
+      "ESCROW_ARBITRATOR_ADDRESS"
+    );
+    const arbitratorAddress =
+      configuredArbitratorAddress ??
+      (localPreview && testnet ? LOCAL_TESTNET_ARBITRATOR_ADDRESS : null);
 
-    if (!feeAddress) {
+    if (!feeAddress || !arbitratorAddress) {
       return Response.json(
         {
           error:
-            "Payments are paused until the platform fee wallet is configured.",
+            "Payments are paused until the fee and escrow arbitrator wallets are configured.",
         },
         { status: 503 }
       );
@@ -129,6 +144,7 @@ export async function POST(request: Request) {
     let buyerWalletAddress: string;
     let sellerWalletAddress: string;
     let platformWalletAddress: string;
+    let arbitratorWalletAddress: string;
     try {
       buyerWalletAddress = normalizeAddress(
         buyer.walletAddress,
@@ -139,6 +155,7 @@ export async function POST(request: Request) {
         testnet
       );
       platformWalletAddress = normalizeAddress(feeAddress, testnet);
+      arbitratorWalletAddress = normalizeAddress(arbitratorAddress, testnet);
     } catch {
       return Response.json(
         { error: "One of the TON wallet addresses is invalid." },
@@ -156,24 +173,41 @@ export async function POST(request: Request) {
     } = calculateTransactionFees(baseNano);
     const dealId = crypto.randomUUID();
     const now = new Date().toISOString();
+    const deliveryDeadlineUnix =
+      Math.floor(Date.now() / 1000) + DEFAULT_DELIVERY_WINDOW_SECONDS;
+    const escrow = buildNativeTonEscrow({
+      dealId,
+      buyerAddress: buyerWalletAddress,
+      sellerAddress: sellerWalletAddress,
+      arbitratorAddress: arbitratorWalletAddress,
+      platformAddress: platformWalletAddress,
+      baseAmountNano: baseNano,
+      buyerFeeNano,
+      sellerFeeNano,
+      buyerTotalNano,
+      sellerAmountNano,
+      platformFeeNano,
+      deliveryDeadlineUnix,
+      network,
+    });
     const [existing] = await db
       .select({ id: deals.id })
       .from(deals)
       .where(
         and(
           eq(deals.listingId, listing.id),
-          eq(deals.buyerId, buyer.id),
           inArray(deals.status, [
             "pending_wallet",
             "payment_submitted",
             "awaiting_delivery",
+            "disputed",
           ])
         )
       )
       .limit(1);
     if (existing) {
       return Response.json(
-        { error: "You already have an active deal for this listing." },
+        { error: "This listing already has an active deal." },
         { status: 409 }
       );
     }
@@ -187,6 +221,8 @@ export async function POST(request: Request) {
         buyerWalletAddress,
         sellerWalletAddress,
         platformWalletAddress,
+        arbitratorWalletAddress,
+        asset: "TON",
         grossNano: baseNano.toString(),
         buyerFeeNano: buyerFeeNano.toString(),
         sellerFeeNano: sellerFeeNano.toString(),
@@ -195,6 +231,13 @@ export async function POST(request: Request) {
         sellerAmountNano: sellerAmountNano.toString(),
         feeBps: 100,
         network,
+        escrowAddress: escrow.address,
+        escrowCodeHash: escrow.codeHash,
+        escrowDataHash: escrow.dataHash,
+        escrowFundingAmountNano: escrow.fundingAmountNano.toString(),
+        escrowStatus: "awaiting_funding",
+        deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
+        reviewWindowSeconds: escrow.reviewWindowSeconds,
         status: "pending_wallet",
         createdAt: now,
         updatedAt: now,
@@ -242,6 +285,8 @@ export async function POST(request: Request) {
           feeBps: 100,
           buyerFeeNano: buyerFeeNano.toString(),
           sellerFeeNano: sellerFeeNano.toString(),
+          escrowAddress: escrow.address,
+          asset: "TON",
         }),
         createdAt: now,
       }),
@@ -262,6 +307,11 @@ export async function POST(request: Request) {
           feeBps: 100,
           network,
           status: "pending_wallet",
+          asset: "TON",
+          escrowAddress: escrow.address,
+          escrowFundingAmountNano: escrow.fundingAmountNano.toString(),
+          deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
+          reviewWindowSeconds: escrow.reviewWindowSeconds,
         },
         transaction: {
           validUntil: Math.floor(Date.now() / 1000) + 300,
@@ -269,14 +319,10 @@ export async function POST(request: Request) {
           from: buyerWalletAddress,
           messages: [
             {
-              address: sellerWalletAddress,
-              amount: sellerAmountNano.toString(),
-              payload: payloadFor(`EZW:${dealId}:SELLER`),
-            },
-            {
-              address: platformWalletAddress,
-              amount: platformFeeNano.toString(),
-              payload: payloadFor(`EZW:${dealId}:FEE`),
+              address: escrow.address,
+              amount: escrow.fundingAmountNano.toString(),
+              stateInit: escrow.stateInit,
+              payload: escrow.fundingPayload,
             },
           ],
         },
@@ -285,6 +331,12 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof RateLimitError) return rateLimitResponse(error);
+    if (isActiveDealConflict(error)) {
+      return Response.json(
+        { error: "This listing already has an active deal." },
+        { status: 409 }
+      );
+    }
     if (error instanceof z.ZodError) {
       return Response.json(
         { error: error.issues[0]?.message ?? "Deal is invalid." },

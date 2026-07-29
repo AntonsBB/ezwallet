@@ -51,11 +51,14 @@ const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS deals (
     id TEXT PRIMARY KEY,
     listing_id TEXT NOT NULL REFERENCES listings(id),
+    application_id TEXT REFERENCES applications(id),
     buyer_id INTEGER NOT NULL REFERENCES users(id),
     seller_id INTEGER NOT NULL REFERENCES users(id),
     buyer_wallet_address TEXT NOT NULL,
     seller_wallet_address TEXT NOT NULL,
     platform_wallet_address TEXT NOT NULL,
+    arbitrator_wallet_address TEXT,
+    asset TEXT NOT NULL DEFAULT 'TON',
     gross_nano TEXT NOT NULL,
     buyer_fee_nano TEXT NOT NULL DEFAULT '0',
     seller_fee_nano TEXT NOT NULL DEFAULT '0',
@@ -64,6 +67,16 @@ const schemaStatements = [
     seller_amount_nano TEXT NOT NULL,
     fee_bps INTEGER NOT NULL DEFAULT 100,
     network TEXT NOT NULL,
+    escrow_address TEXT,
+    escrow_code_hash TEXT,
+    escrow_data_hash TEXT,
+    escrow_funding_amount_nano TEXT,
+    escrow_funding_tx_hash TEXT,
+    escrow_settlement_tx_hash TEXT,
+    escrow_status TEXT NOT NULL DEFAULT 'legacy',
+    delivery_deadline_unix INTEGER,
+    review_window_seconds INTEGER,
+    review_deadline_unix INTEGER,
     status TEXT NOT NULL DEFAULT 'pending_wallet',
     transaction_ref TEXT,
     payment_boc_digest TEXT,
@@ -72,6 +85,25 @@ const schemaStatements = [
     submitted_at TEXT,
     verified_at TEXT,
     completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS deal_chain_actions (
+    id TEXT PRIMARY KEY,
+    deal_id TEXT NOT NULL REFERENCES deals(id),
+    actor_user_id INTEGER REFERENCES users(id),
+    actor_wallet_address TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    query_id TEXT NOT NULL,
+    detail_hash TEXT NOT NULL DEFAULT '0',
+    payload_base64 TEXT NOT NULL,
+    message_value_nano TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'prepared',
+    transaction_ref TEXT,
+    submission_boc_digest TEXT,
+    tx_hash TEXT,
+    submitted_at TEXT,
+    confirmed_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
@@ -141,6 +173,8 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS listings_owner_idx ON listings(owner_id)`,
   `CREATE INDEX IF NOT EXISTS deals_buyer_idx ON deals(buyer_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS deals_seller_idx ON deals(seller_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS deal_chain_actions_deal_idx ON deal_chain_actions(deal_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS deal_chain_actions_status_idx ON deal_chain_actions(status, submitted_at)`,
   `CREATE INDEX IF NOT EXISTS ledger_deal_idx ON ledger_entries(deal_id)`,
   `CREATE INDEX IF NOT EXISTS deal_events_deal_idx ON deal_events(deal_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS reviews_reviewee_idx ON reviews(reviewee_id, created_at)`,
@@ -348,10 +382,37 @@ export async function ensureDatabase() {
     ["buyer_fee_nano", "ALTER TABLE deals ADD buyer_fee_nano TEXT NOT NULL DEFAULT '0'"],
     ["seller_fee_nano", "ALTER TABLE deals ADD seller_fee_nano TEXT NOT NULL DEFAULT '0'"],
     ["buyer_total_nano", "ALTER TABLE deals ADD buyer_total_nano TEXT NOT NULL DEFAULT '0'"],
+    ["arbitrator_wallet_address", "ALTER TABLE deals ADD arbitrator_wallet_address TEXT"],
+    ["application_id", "ALTER TABLE deals ADD application_id TEXT REFERENCES applications(id)"],
+    ["asset", "ALTER TABLE deals ADD asset TEXT NOT NULL DEFAULT 'TON'"],
+    ["escrow_address", "ALTER TABLE deals ADD escrow_address TEXT"],
+    ["escrow_code_hash", "ALTER TABLE deals ADD escrow_code_hash TEXT"],
+    ["escrow_data_hash", "ALTER TABLE deals ADD escrow_data_hash TEXT"],
+    ["escrow_funding_amount_nano", "ALTER TABLE deals ADD escrow_funding_amount_nano TEXT"],
+    ["escrow_funding_tx_hash", "ALTER TABLE deals ADD escrow_funding_tx_hash TEXT"],
+    ["escrow_settlement_tx_hash", "ALTER TABLE deals ADD escrow_settlement_tx_hash TEXT"],
+    ["escrow_status", "ALTER TABLE deals ADD escrow_status TEXT NOT NULL DEFAULT 'legacy'"],
+    ["delivery_deadline_unix", "ALTER TABLE deals ADD delivery_deadline_unix INTEGER"],
+    ["review_window_seconds", "ALTER TABLE deals ADD review_window_seconds INTEGER"],
+    ["review_deadline_unix", "ALTER TABLE deals ADD review_deadline_unix INTEGER"],
   ].filter(([name]) => !existingDealColumns.has(name));
   for (const [, statement] of missingDealColumns) {
     await database.prepare(statement).run();
   }
+  await database.batch([
+    database.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS deals_escrow_address_idx ON deals(escrow_address)"
+    ),
+    database.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS deals_listing_active_idx ON deals(listing_id) WHERE status IN ('pending_wallet', 'payment_submitted', 'awaiting_delivery', 'disputed')"
+    ),
+    database.prepare(
+      "CREATE INDEX IF NOT EXISTS deal_chain_actions_deal_idx ON deal_chain_actions(deal_id, created_at)"
+    ),
+    database.prepare(
+      "CREATE INDEX IF NOT EXISTS deal_chain_actions_status_idx ON deal_chain_actions(status, submitted_at)"
+    ),
+  ]);
   if (
     getBinding("SEED_DEMO_DATA") === "true" ||
     getBinding("ENVIRONMENT") !== "production"

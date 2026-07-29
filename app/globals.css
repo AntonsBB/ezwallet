@@ -916,6 +916,14 @@ img {
   margin: 0 12px 12px 58px;
 }
 
+.deal-pending-note {
+  margin: 0;
+  padding: 0 12px 12px 58px;
+  color: #73796f;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
 .deal-actions button.is-primary {
   color: #fff;
   background: #111;

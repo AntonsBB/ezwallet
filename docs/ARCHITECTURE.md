@@ -7,7 +7,10 @@
 - Relational data: Cloudflare D1 with tracked SQL migrations.
 - Listing media: Cloudflare R2 with size/type validation and unguessable object keys.
 - Wallet integration: TON Connect in the browser plus server-side TON proof verification.
-- Payment monitoring: scheduled Worker queries a TON API/provider and confirms expected finalized transfers.
+- Escrow: one deterministic native-TON contract per deal, compiled from
+  Acton/Tolk and deployed atomically with buyer funding.
+- Payment monitoring: a scheduled Worker queries TON Center and confirms the
+  pinned contract code, state, action messages, payouts, and destruction.
 
 The frontend and API share one origin. This keeps cookies, CSRF/origin checks, the TON manifest, and Telegram launch configuration simple.
 
@@ -20,7 +23,12 @@ Telegram client
 User wallet
   ├─ TON Connect session ──> browser
   ├─ ton_proof ──> Worker verification
-  └─ signed transaction BoC ──> TON network
+  └─ signed escrow transaction BoC ──> TON network
+
+Deal escrow
+  ├─ immutable participants, amounts, deadlines, and fees
+  ├─ delivery/dispute/release/refund messages
+  └─ fixed terminal payouts ──> buyer, seller, and platform
 
 Worker
   ├─ prepared statements ──> D1
@@ -53,14 +61,26 @@ Wallet responses are never treated as identity proof without this verification.
 
 ## Payments
 
-Easy Wallet is non-custodial. A deal quote is created by the Worker using integer nanotons and immutable recipients:
+Easy Wallet is non-custodial. A deal quote is created by the Worker using
+integer nanotons and immutable recipients:
 
 - buyer total: base price plus the buyer's 1% fee;
-- seller message: base price minus the seller's 1% fee;
-- platform message: the combined buyer and seller fees;
-- both messages contain deal-specific references.
+- seller proceeds: base price minus the seller's 1% fee;
+- platform proceeds: the combined buyer and seller fees;
+- a refundable deployment/action reserve covers contract gas and storage.
 
-The client submits the Worker-built request to TON Connect. The returned BoC means the wallet signed/broadcast a message; it does not prove final payment. The backend records it as submitted and independently confirms the finalized transfers before changing the deal to `payment_confirmed`.
+The Worker derives the contract data, `StateInit`, address, and funding body from
+the frozen quote. The client submits that one-message request to TON Connect.
+The returned BoC means the wallet signed/broadcast a message; it does not prove
+funding. The backend independently verifies the deployed code and data hashes,
+source, exact value, and body before advancing the deal. The same rule applies
+to delivery, dispute, release, and refund actions. Terminal settlement is only
+accepted when fixed payouts and contract destruction are observed.
+
+Funding and action reconciliation also scans server-prepared records, so a lost
+browser callback does not strand a successful transaction. Stale records expire
+only after their wallet validity window, a safety delay, and a successful
+provider query that finds no matching finalized message.
 
 ## Data integrity
 
@@ -69,6 +89,7 @@ The client submits the Worker-built request to TON Connect. The returned BoC mea
 - SQL values use prepared statements.
 - Unique and partial indexes prevent duplicate active deals, duplicate applications, duplicate reviews, replayed payment references, and replayed proof nonces.
 - Deal events and ledger entries are append-only.
+- Prepared and submitted chain actions are durable and idempotently reconciled.
 - Listing edits never rewrite a previously accepted quote.
 - State transitions are checked on the server.
 
@@ -78,13 +99,14 @@ Required Worker secrets:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
-- `SESSION_SECRET` if an additional keyed session derivation is used
-- `TON_PROVIDER_API_KEY` when the selected provider requires one
+- `RECONCILE_SECRET`
+- `TONCENTER_API_KEY` when provider rate limits require one
 
 Required non-secret configuration:
 
 - production app origin
 - platform TON address
+- arbitrator TON address and authorized Telegram operator ID
 - TON network (`mainnet` for launch; testnet during verification)
 - Telegram bot username
 - init-data and proof freshness windows

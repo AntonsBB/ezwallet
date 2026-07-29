@@ -11,8 +11,11 @@ It is intentionally non-custodial:
 - Private keys and seed phrases never enter Easy Wallet.
 - Every paid deal discloses an immutable 1% buyer fee and 1% seller fee only at
   checkout.
+- Each deal deploys and funds its own deterministic native-TON escrow contract
+  in one wallet transaction.
 - A wallet broadcast is only `payment_submitted`; an independent reconciler
-  verifies both expected finalized recipient transfers before the deal advances.
+  verifies the escrow code, state, sender, exact amount, and message before the
+  deal advances.
 - D1 stores marketplace state and an append-only deal/ledger event history.
 - R2 stores user-uploaded listing images behind a constrained media route.
 
@@ -26,7 +29,7 @@ The product and trust-boundary specifications live in
   listing creation, direct purchase, reports.
 - **Work:** services, jobs, applications, job-owner decisions, and hiring.
 - **Wallet:** TON Connect, proof verification, transparent fee breakdown,
-  on-chain confirmation, delivery/completion/dispute actions, reviews.
+  per-deal escrow, delivery/completion/dispute actions, reviews.
 - **Profile:** Telegram identity, public reputation, editable details, listings,
   wallet status, and safety resources.
 - **Bot:** `/start` response with a Web App launch button and secret-validated
@@ -43,6 +46,7 @@ and civic voting are deliberately outside this release.
 - Cloudflare R2
 - Telegram Mini Apps and Bot API
 - TON Connect UI, TON proof, TON Center v2/v3
+- Acton/Tolk native-TON escrow contract
 
 Node.js `>=22.13.0` is required.
 
@@ -58,31 +62,49 @@ Open the printed local URL. Localhost permits a demo Telegram profile so the UI
 can be reviewed without weakening deployed authentication. Wallet verification
 still requires a real activated TON testnet wallet.
 
-For a temporary HTTPS tunnel, set `EZWALLET_PREVIEW_HOST` to the tunnel's exact
-hostname (for example, `example.ngrok-free.app`). The development server only
-accepts that configured host; do not use a wildcard. Set the Telegram runtime
-variables in the same process that starts `npm run dev`.
-
 Useful commands:
 
 ```bash
 npm run test:unit
 npm run lint
 npm run build
+npm run cloudflare:check
 npm test
 ```
 
 ## Cloudflare deployment
 
-`.openai/hosting.json` declares D1 as `DB` and R2 as `MEDIA`. Apply the checked-in
-SQL migrations in `drizzle/` to the production D1 database, configure a two-minute
-scheduled trigger for the Worker, then set:
+`wrangler.jsonc` defines the testnet production Worker, the
+`easywallet.abbrains.xyz` custom domain, the `easy-wallet-production` D1
+database, the private `easy-wallet-media` R2 bucket, and the two-minute
+reconciler. Build and validate the exact deploy artifact with:
+
+```bash
+npm run cloudflare:check
+```
+
+After Cloudflare authentication, create the R2 bucket, apply the checked-in D1
+migrations, configure the secret bindings, and deploy:
+
+```bash
+npx wrangler r2 bucket create easy-wallet-media
+npm run db:migrate:production
+npm run deploy:production
+```
+
+The existing CNAME at `easywallet.abbrains.xyz` must be removed immediately
+before the Worker custom-domain deployment; Cloudflare then creates and manages
+the replacement DNS record and certificate.
+
+Set these runtime bindings before enabling payments:
 
 | Binding | Required | Purpose |
 | --- | --- | --- |
 | `ENVIRONMENT=production` | yes | disables demo seeding |
 | `TON_NETWORK=testnet` | yes at first | use `mainnet` only after testnet sign-off |
-| `PLATFORM_FEE_ADDRESS` | yes | receives the disclosed 1% fee from each transaction party |
+| `PLATFORM_FEE_ADDRESS` | yes | receives the exact 1% fee from each party after settlement |
+| `ESCROW_ARBITRATOR_ADDRESS` | yes | wallet allowed to resolve a disputed on-chain escrow |
+| `ESCROW_ARBITRATOR_TELEGRAM_ID` | yes | Telegram operator allowed to prepare dispute resolutions |
 | `MINI_APP_URL` | yes | canonical HTTPS deployment URL |
 | `TELEGRAM_BOT_TOKEN` | yes, secret | validates Mini App sessions and runs the bot |
 | `TELEGRAM_BOT_USERNAME` | yes | builds the wallet return link to the dedicated bot |
@@ -91,8 +113,9 @@ scheduled trigger for the Worker, then set:
 | `TONCENTER_API_KEY` | recommended, secret | raises TON Center limits |
 
 Do not enable mainnet until all participants can verify mainnet wallets, the fee
-address is reviewed out-of-band, the payment reconciler has passed testnet
-failure/replay tests, and operational moderation is staffed.
+and arbitrator addresses are reviewed out-of-band, the escrow contract has an
+independent security review, the reconciler has passed testnet failure/replay
+tests, and operational moderation is staffed.
 
 ## Telegram setup
 
@@ -114,16 +137,25 @@ The helper never prints the bot token or webhook secret.
 
 ## Payment state machine
 
-`pending_wallet → payment_submitted → awaiting_delivery → fulfilled`
+`awaiting_funding -> funded -> delivered -> released`
 
-- `pending_wallet`: server froze recipients, amount, network, and both 1% fees.
-- `payment_submitted`: wallet returned a BOC; no payment claim is made.
-- `awaiting_delivery`: the reconciler independently matched both exact
-  recipient transfers, amounts, sender, comments, and indexed transaction
-  hashes.
-- `fulfilled`: the buyer confirmed receipt.
-- `cancelled` is only valid before wallet submission.
-- `disputed` preserves the record for moderation; it cannot reverse TON.
+- `awaiting_funding`: server froze buyer, seller, arbitrator, platform,
+  deadlines, price, network, and both exact 1% fees.
+- Funding: the buyer deploys and funds the deterministic escrow atomically.
+- `funded`: the reconciler independently matched the escrow code, state,
+  sender, exact value, and funding payload.
+- `delivered`: the seller submitted immutable delivery evidence on-chain.
+- `released`: the buyer confirmed, or the review timeout elapsed, and the
+  contract paid fixed seller proceeds plus the two platform fees.
+- `disputed`: the funds remain in the contract until the configured arbitrator
+  signs release or refund.
+- `refunded`: an eligible expiry or arbitrator decision returned the remaining
+  contract balance to the buyer.
+- An unfunded request closes automatically only after its wallet window has
+  elapsed and the reconciler finds no matching finalized funding transaction.
+
+The contract sources, generated TypeScript wrapper, test scenarios, and threat
+assumptions are documented in [`chain/README.md`](chain/README.md).
 
 ## Security
 

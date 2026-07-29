@@ -45,6 +45,7 @@ type SheetName =
   | "payment"
   | "profile"
   | "report"
+  | "dispute"
   | null;
 
 type Listing = {
@@ -98,6 +99,20 @@ type Deal = {
   buyerTotalNano: string;
   platformFeeNano: string;
   sellerAmountNano: string;
+  asset: "TON";
+  escrowAddress: string | null;
+  escrowStatus:
+    | "legacy"
+    | "awaiting_funding"
+    | "funded"
+    | "delivered"
+    | "disputed"
+    | "released"
+    | "refunded";
+  escrowFundingAmountNano: string | null;
+  deliveryDeadlineUnix: number | null;
+  reviewWindowSeconds: number | null;
+  reviewDeadlineUnix: number | null;
   status: string;
   network: "mainnet" | "testnet";
   transactionRef: string | null;
@@ -149,6 +164,7 @@ declare global {
 
 const marketCategories = ["All", "Physical", "Digital", "Electronics", "Mobility"];
 const workCategories = ["All", "Services", "Jobs", "Remote", "Today"];
+const escrowFundingReserveNano = 120_000_000n;
 
 function compactAddress(address: string) {
   if (address.length < 14) return address;
@@ -169,6 +185,18 @@ function statusLabel(status: string) {
     disputed: "Needs review",
   };
   return labels[status] ?? status.replaceAll("_", " ");
+}
+
+function escrowStatusLabel(deal: Deal) {
+  if (deal.status === "awaiting_delivery" && deal.escrowStatus === "funded") {
+    return "Funded escrow · awaiting delivery";
+  }
+  if (deal.status === "awaiting_delivery" && deal.escrowStatus === "delivered") {
+    return "Delivered · awaiting approval";
+  }
+  if (deal.escrowStatus === "released") return "Released on TON";
+  if (deal.escrowStatus === "refunded") return "Refunded on TON";
+  return statusLabel(deal.status);
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
@@ -576,9 +604,21 @@ function WalletScreen({
   onDisconnect: () => void;
   onDealAction: (
     deal: Deal,
-    action: "cancel" | "mark_delivered" | "confirm_received" | "dispute"
+    action:
+      | "mark_delivered"
+      | "confirm_received"
+      | "dispute"
+      | "refund_expired"
+      | "release_after_review"
   ) => void;
 }) {
+  const [nowUnix, setNowUnix] = useState(0);
+  useEffect(() => {
+    const updateNow = () => setNowUnix(Math.floor(Date.now() / 1000));
+    updateNow();
+    const timer = window.setInterval(updateNow, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const submitted = deals.filter(
     (deal) => deal.status === "payment_submitted"
   ).length;
@@ -655,24 +695,22 @@ function WalletScreen({
                 <div>
                   <strong>{deal.title}</strong>
                   <small>
-                    {statusLabel(deal.status)} · {deal.counterpartyName}
+                    {escrowStatusLabel(deal)} · {deal.counterpartyName}
                   </small>
                 </div>
                 <b>{nanoToTon(deal.grossNano)} TON</b>
               </div>
               {deal.status === "pending_wallet" &&
                 deal.buyerId === currentUserId && (
-                  <button
-                    type="button"
-                    className="deal-action"
-                    onClick={() => onDealAction(deal, "cancel")}
-                  >
-                    Cancel unpaid deal
-                  </button>
+                  <p className="deal-pending-note">
+                    Checking TON. An unfunded request closes automatically after
+                    its wallet window and an on-chain check.
+                  </p>
                 )}
               {deal.status === "awaiting_delivery" && (
                 <div className="deal-actions">
-                  {deal.sellerId === currentUserId && (
+                  {deal.escrowStatus === "funded" &&
+                    deal.sellerId === currentUserId && (
                     <button
                       type="button"
                       onClick={() => onDealAction(deal, "mark_delivered")}
@@ -680,7 +718,8 @@ function WalletScreen({
                       Mark delivered
                     </button>
                   )}
-                  {deal.buyerId === currentUserId && (
+                  {deal.escrowStatus === "delivered" &&
+                    deal.buyerId === currentUserId && (
                     <button
                       type="button"
                       className="is-primary"
@@ -689,12 +728,38 @@ function WalletScreen({
                       Confirm received
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onDealAction(deal, "dispute")}
-                  >
-                    Report a problem
-                  </button>
+                  {(deal.escrowStatus === "funded" ||
+                    deal.escrowStatus === "delivered") && (
+                    <button
+                      type="button"
+                      onClick={() => onDealAction(deal, "dispute")}
+                    >
+                      Open dispute
+                    </button>
+                  )}
+                  {deal.escrowStatus === "funded" &&
+                    deal.buyerId === currentUserId &&
+                    deal.deliveryDeadlineUnix !== null &&
+                    nowUnix > deal.deliveryDeadlineUnix && (
+                      <button
+                        type="button"
+                        onClick={() => onDealAction(deal, "refund_expired")}
+                      >
+                        Refund expired deal
+                      </button>
+                    )}
+                  {deal.escrowStatus === "delivered" &&
+                    deal.reviewDeadlineUnix !== null &&
+                    nowUnix > deal.reviewDeadlineUnix && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onDealAction(deal, "release_after_review")
+                        }
+                      >
+                        Release after review window
+                      </button>
+                    )}
                 </div>
               )}
             </article>
@@ -1319,6 +1384,10 @@ function PaymentSuccessSheet({
     buyerTotalNano: string;
     platformFeeNano: string;
     sellerAmountNano: string;
+    escrowAddress: string;
+    escrowFundingAmountNano: string;
+    deliveryDeadlineUnix: number;
+    reviewWindowSeconds: number;
   } | null;
   onClose: () => void;
 }) {
@@ -1331,13 +1400,14 @@ function PaymentSuccessSheet({
         <span className="eyebrow">Wallet submission recorded</span>
         <h2>{deal?.title}</h2>
         <p>
-          Your wallet broadcast the transaction. Easy Wallet will keep the deal in
-          confirming status until recipient transfers are observed on TON.
+          Your wallet broadcast the escrow deployment. Easy Wallet will keep the
+          deal in confirming status until the exact contract, funding amount, and
+          code hash are independently verified on TON.
         </p>
         <div className="payment-breakdown">
           <div>
-            <span>Seller</span>
-            <b>{deal && nanoToTon(deal.sellerAmountNano, 4)} TON</b>
+            <span>Locked for the deal</span>
+            <b>{deal && nanoToTon(deal.buyerTotalNano, 4)} TON</b>
           </div>
           <div>
             <span>Your fee · 1%</span>
@@ -1348,8 +1418,24 @@ function PaymentSuccessSheet({
             <b>{deal && nanoToTon(deal.sellerFeeNano, 4)} TON</b>
           </div>
           <div>
-            <span>Total approved</span>
-            <b>{deal && nanoToTon(deal.buyerTotalNano, 4)} TON</b>
+            <span>Refundable network reserve</span>
+            <b>
+              {deal &&
+                nanoToTon(
+                  (
+                    BigInt(deal.escrowFundingAmountNano) -
+                    BigInt(deal.buyerTotalNano)
+                  ).toString(),
+                  4
+                )}{" "}
+              TON
+            </b>
+          </div>
+          <div>
+            <span>Wallet request</span>
+            <b>
+              {deal && nanoToTon(deal.escrowFundingAmountNano, 4)} TON
+            </b>
           </div>
         </div>
         <button type="button" className="primary-action" onClick={onClose}>
@@ -1375,6 +1461,8 @@ function PaymentQuoteSheet({
 }) {
   if (!listing) return null;
   const quote = calculateTransactionFees(BigInt(listing.priceNano));
+  const walletRequestNano =
+    quote.buyerTotalNano + escrowFundingReserveNano;
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Review payment">
@@ -1383,7 +1471,8 @@ function PaymentQuoteSheet({
         <h2>{listing.title}</h2>
         <p>
           Both parties contribute 1% only when this transaction is approved.
-          Easy Wallet never takes custody of your funds.
+          Funds enter a per-deal TON escrow contract; Easy Wallet never stores a
+          spendable key.
         </p>
         <div className="payment-breakdown">
           <div>
@@ -1406,6 +1495,14 @@ function PaymentQuoteSheet({
             <span>Seller receives</span>
             <b>{nanoToTon(quote.sellerAmountNano.toString(), 4)} TON</b>
           </div>
+          <div>
+            <span>Refundable contract reserve</span>
+            <b>{nanoToTon(escrowFundingReserveNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Wallet request</span>
+            <b>{nanoToTon(walletRequestNano.toString(), 4)} TON</b>
+          </div>
         </div>
         <button
           type="button"
@@ -1415,7 +1512,7 @@ function PaymentQuoteSheet({
         >
           {busy
             ? "Preparing wallet…"
-            : `Approve ${nanoToTon(quote.buyerTotalNano.toString(), 4)} TON`}
+            : `Fund ${nanoToTon(walletRequestNano.toString(), 4)} TON escrow`}
           {!busy && <ArrowRight size={18} />}
         </button>
         <button type="button" className="text-action" onClick={onClose}>
@@ -1548,6 +1645,59 @@ function ReportSheet({
   );
 }
 
+function DisputeSheet({
+  open,
+  deal,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  deal: Deal | null;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (detail: string) => Promise<void>;
+}) {
+  const [detail, setDetail] = useState("");
+  return (
+    <BottomSheet
+      open={open && Boolean(deal)}
+      onClose={onClose}
+      title="Open escrow dispute"
+    >
+      <form
+        className="create-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSubmit(detail);
+        }}
+      >
+        <div className="form-notice">
+          <ShieldCheck size={17} />
+          Opening a dispute freezes the escrow. Funds remain in the contract
+          until the configured arbitrator resolves the evidence.
+        </div>
+        <label>
+          <span>What happened?</span>
+          <textarea
+            required
+            minLength={10}
+            maxLength={500}
+            value={detail}
+            onChange={(event) => setDetail(event.target.value)}
+            placeholder="Describe the delivery, item, service, or communication problem."
+          />
+          <small>{detail.length}/500</small>
+        </label>
+        <button className="primary-action" disabled={busy}>
+          {busy ? "Preparing wallet…" : "Sign dispute action"}{" "}
+          {!busy && <ArrowRight size={18} />}
+        </button>
+      </form>
+    </BottomSheet>
+  );
+}
+
 function Toast({
   message,
   tone,
@@ -1583,6 +1733,7 @@ export default function EzWalletApp() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [applications, setApplications] = useState<ApplicationSummary[]>([]);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [query, setQuery] = useState("");
   const [marketCategory, setMarketCategory] = useState("All");
   const [workCategory, setWorkCategory] = useState("All");
@@ -1600,6 +1751,10 @@ export default function EzWalletApp() {
     buyerTotalNano: string;
     platformFeeNano: string;
     sellerAmountNano: string;
+    escrowAddress: string;
+    escrowFundingAmountNano: string;
+    deliveryDeadlineUnix: number;
+    reviewWindowSeconds: number;
   } | null>(null);
   const [walletProofStatus, setWalletProofStatus] = useState<
     "idle" | "ready" | "verifying" | "verified" | "reconnect" | "error"
@@ -1933,6 +2088,10 @@ export default function EzWalletApp() {
           buyerTotalNano: string;
           platformFeeNano: string;
           sellerAmountNano: string;
+          escrowAddress: string;
+          escrowFundingAmountNano: string;
+          deliveryDeadlineUnix: number;
+          reviewWindowSeconds: number;
         };
         transaction?: Parameters<typeof tonConnectUi.sendTransaction>[0];
       };
@@ -2069,24 +2228,56 @@ export default function EzWalletApp() {
 
   const transitionDeal = async (
     deal: Deal,
-    action: "cancel" | "mark_delivered" | "confirm_received" | "dispute"
+    action:
+      | "mark_delivered"
+      | "confirm_received"
+      | "dispute"
+      | "refund_expired"
+      | "release_after_review",
+    detail = ""
   ) => {
     setBusy(true);
     try {
       const response = await apiFetch(`/api/deals/${deal.id}/transition`, {
         method: "POST",
-        body: JSON.stringify({ action, detail: "" }),
+        body: JSON.stringify({ action, detail }),
       });
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        deal?: { id: string; status: string };
+        action?: { id: string; kind: string; status: string };
+        transaction?: Parameters<typeof tonConnectUi.sendTransaction>[0];
+      };
       if (!response.ok) throw new Error(data.error ?? "Deal could not be updated.");
-      await loadSession();
-      showToast(
-        action === "confirm_received"
-          ? "Deal completed. You can now leave a review."
-          : "Deal updated.",
-        "success"
-      );
+
+      if (data.transaction && data.action) {
+        telegram?.HapticFeedback?.impactOccurred("medium");
+        const result = await tonConnectUi.sendTransaction(data.transaction);
+        const submittedResponse = await apiFetch(
+          `/api/deals/${deal.id}/actions/${data.action.id}/submitted`,
+          {
+            method: "POST",
+            body: JSON.stringify({ boc: result.boc, traceId: result.traceId }),
+          }
+        );
+        if (!submittedResponse.ok) {
+          const submitted = (await submittedResponse.json()) as {
+            error?: string;
+          };
+          throw new Error(
+            submitted.error ??
+              "Wallet sent the action, but its confirmation record needs attention."
+          );
+        }
+        setSheet(null);
+        setSelectedDeal(null);
+        telegram?.HapticFeedback?.notificationOccurred("success");
+        showToast("Escrow action submitted. Waiting for TON confirmation.", "success");
+        return;
+      }
+      throw new Error("The escrow action did not include a wallet request.");
     } catch (error) {
+      telegram?.HapticFeedback?.notificationOccurred("error");
       showToast(
         error instanceof Error ? error.message : "Deal could not be updated.",
         "error"
@@ -2143,7 +2334,14 @@ export default function EzWalletApp() {
               currentUserId={session?.id}
               onConnect={() => void tonConnectUi.openModal()}
               onDisconnect={() => void tonConnectUi.disconnect()}
-              onDealAction={transitionDeal}
+              onDealAction={(deal, action) => {
+                if (action === "dispute") {
+                  setSelectedDeal(deal);
+                  setSheet("dispute");
+                  return;
+                }
+                void transitionDeal(deal, action);
+              }}
             />
           )}
           {tab === "profile" && (
@@ -2230,6 +2428,22 @@ export default function EzWalletApp() {
           busy={busy}
           onClose={() => setSheet(null)}
           onSubmit={submitReport}
+        />
+
+        <DisputeSheet
+          key={selectedDeal?.id ?? "no-dispute"}
+          open={sheet === "dispute"}
+          deal={selectedDeal}
+          busy={busy}
+          onClose={() => {
+            setSheet(null);
+            setSelectedDeal(null);
+          }}
+          onSubmit={async (detail) => {
+            if (selectedDeal) {
+              await transitionDeal(selectedDeal, "dispute", detail);
+            }
+          }}
         />
 
         <PaymentSuccessSheet
