@@ -28,6 +28,7 @@ import {
   MessageCircle,
   PackageCheck,
   Pause,
+  PencilLine,
   Play,
   Plus,
   RefreshCw,
@@ -50,11 +51,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { calculateTransactionFees, nanoToTon } from "@/lib/format";
 import { normalizePublicCoordinates } from "@/lib/geo";
+import { marketCategoryOptions } from "@/lib/listing-categories";
 import {
   activeMarketFilterCount,
   defaultMarketFilterForm,
   filterAndSortMarketListings,
-  marketCategoryOptions,
   parseMarketPriceRange,
   type MarketFilterForm,
   type MarketListingType,
@@ -71,6 +72,7 @@ type Tab = "market" | "work" | "wallet" | "profile";
 type SheetName =
   | "listing"
   | "create"
+  | "edit"
   | "apply"
   | "checkout"
   | "payment"
@@ -105,6 +107,8 @@ type Listing = {
   ownerRatingMilli: number;
   ownerReviewCount: number;
   ownerDealsCompleted: number;
+  ownerWalletVerified: boolean;
+  ownerWalletNetwork: "mainnet" | "testnet" | null;
 };
 
 type User = {
@@ -170,12 +174,20 @@ type OwnerListing = Pick<
   | "section"
   | "type"
   | "title"
+  | "description"
+  | "category"
   | "priceNano"
   | "imageUrl"
+  | "location"
+  | "latitudeE6"
+  | "longitudeE6"
+  | "locationRadiusMeters"
   | "delivery"
   | "status"
   | "createdAt"
->;
+> & {
+  updatedAt: string;
+};
 
 type AppConfig = {
   feeBps: number;
@@ -1440,6 +1452,7 @@ function ListingManagerSheet({
   onClose,
   onRetry,
   onCreate,
+  onEdit,
   onAction,
 }: {
   open: boolean;
@@ -1449,6 +1462,7 @@ function ListingManagerSheet({
   onClose: () => void;
   onRetry: () => void;
   onCreate: () => void;
+  onEdit: (listing: OwnerListing) => void;
   onAction: (
     listing: OwnerListing,
     action: "pause" | "activate" | "close"
@@ -1544,6 +1558,13 @@ function ListingManagerSheet({
                   {(listing.status === "active" ||
                     listing.status === "paused") && (
                     <div className="owned-listing-actions">
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => onEdit(listing)}
+                      >
+                        <PencilLine size={13} /> Edit
+                      </button>
                       {listing.status === "active" ? (
                         <button
                           type="button"
@@ -1674,6 +1695,7 @@ function BottomSheet({
 function ListingSheet({
   listing,
   currentUser,
+  network,
   hasApplied,
   onClose,
   onPay,
@@ -1687,6 +1709,7 @@ function ListingSheet({
 }: {
   listing: Listing;
   currentUser: User | null;
+  network: "mainnet" | "testnet";
   hasApplied: boolean;
   onClose: () => void;
   onPay: (listing: Listing) => void;
@@ -1700,6 +1723,8 @@ function ListingSheet({
 }) {
   const isOwner = currentUser?.id === listing.ownerId;
   const isJob = listing.type === "job";
+  const sellerWalletReady =
+    listing.ownerWalletVerified && listing.ownerWalletNetwork === network;
   return (
     <div className="listing-detail">
       <div
@@ -1745,9 +1770,27 @@ function ListingSheet({
             size="medium"
           />
           <div>
-            <strong>
-              {listing.ownerName} <BadgeCheck size={14} />
-            </strong>
+            <strong>{listing.ownerName}</strong>
+            <div className="seller-verification">
+              <span>
+                <BadgeCheck size={12} /> Telegram-authenticated
+              </span>
+              {sellerWalletReady ? (
+                <span>
+                  <ShieldCheck size={12} /> TON {network} wallet
+                </span>
+              ) : listing.ownerWalletVerified &&
+                listing.ownerWalletNetwork ? (
+                <span className="is-pending">
+                  <ShieldCheck size={12} /> TON {listing.ownerWalletNetwork}{" "}
+                  wallet · {network} required
+                </span>
+              ) : (
+                <span className="is-pending">
+                  <WalletCards size={12} /> Wallet not ready
+                </span>
+              )}
+            </div>
             <span>
               <Star
                 size={12}
@@ -1808,7 +1851,12 @@ function ListingSheet({
         <button
           type="button"
           className="primary-action"
-          disabled={busy || isOwner || (isJob && hasApplied)}
+          disabled={
+            busy ||
+            isOwner ||
+            (isJob && hasApplied) ||
+            (!isJob && !sellerWalletReady)
+          }
           onClick={() => (isJob ? onApply(listing) : onPay(listing))}
         >
           {isOwner
@@ -1817,6 +1865,8 @@ function ListingSheet({
               ? "Application sent"
             : busy
               ? "Preparing…"
+              : !isJob && !sellerWalletReady
+                ? `Seller needs a verified ${network} wallet`
               : isJob
                 ? "Apply for this work"
                 : `Continue · ${nanoToTon(listing.priceNano)} TON`}
@@ -1862,6 +1912,7 @@ function CreateSheet({
   busy,
   canPublish,
   initialSection,
+  listing,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1869,12 +1920,41 @@ function CreateSheet({
   busy: boolean;
   canPublish: boolean;
   initialSection: "market" | "work";
+  listing?: OwnerListing;
 }) {
   const [form, setForm] = useState<CreateForm>(() => ({
-    ...initialCreateForm,
-    section: initialSection,
-    type: initialSection === "market" ? "physical" : "service",
-    category: "",
+    ...(listing
+      ? {
+          section: listing.section,
+          type: listing.type,
+          title: listing.title,
+          description: listing.description,
+          category:
+            listing.section === "market" &&
+            !marketCategoryOptions.includes(
+              listing.category as (typeof marketCategoryOptions)[number]
+            )
+              ? "Other"
+              : listing.category,
+          priceTon: nanoToTon(listing.priceNano, 9),
+          location: listing.location,
+          latitude:
+            listing.latitudeE6 === null
+              ? undefined
+              : listing.latitudeE6 / 1_000_000,
+          longitude:
+            listing.longitudeE6 === null
+              ? undefined
+              : listing.longitudeE6 / 1_000_000,
+          locationRadiusMeters: listing.locationRadiusMeters ?? undefined,
+          delivery: listing.delivery,
+        }
+      : {
+          ...initialCreateForm,
+          section: initialSection,
+          type: initialSection === "market" ? "physical" : "service",
+          category: "",
+        }),
   }));
   const [image, setImage] = useState<File | null>(null);
   const [locationPending, setLocationPending] = useState(false);
@@ -1936,7 +2016,11 @@ function CreateSheet({
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Create a listing">
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      title={listing ? "Edit listing" : "Create a listing"}
+    >
       <form
         className="create-form"
         onSubmit={(event) => {
@@ -1944,47 +2028,62 @@ function CreateSheet({
           void onSubmit(form, image);
         }}
       >
-        <div className="segmented-control">
-          <button
-            type="button"
-            className={form.section === "market" ? "is-active" : ""}
-            onClick={() => setSection("market")}
-          >
-            <ShoppingBag size={16} /> Market
-          </button>
-          <button
-            type="button"
-            className={form.section === "work" ? "is-active" : ""}
-            onClick={() => setSection("work")}
-          >
-            <BriefcaseBusiness size={16} /> Work
-          </button>
-        </div>
+        {listing ? (
+          <div className="edit-listing-lock">
+            <span className="eyebrow">
+              {form.section} · {form.type}
+            </span>
+            <strong>Section and listing type stay fixed</strong>
+            <p>
+              Existing deals keep their original terms. Editing is blocked
+              while a deal or application is active.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="segmented-control">
+              <button
+                type="button"
+                className={form.section === "market" ? "is-active" : ""}
+                onClick={() => setSection("market")}
+              >
+                <ShoppingBag size={16} /> Market
+              </button>
+              <button
+                type="button"
+                className={form.section === "work" ? "is-active" : ""}
+                onClick={() => setSection("work")}
+              >
+                <BriefcaseBusiness size={16} /> Work
+              </button>
+            </div>
 
-        <label>
-          <span>Listing type</span>
-          <select
-            value={form.type}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                type: event.target.value as CreateForm["type"],
-              }))
-            }
-          >
-            {form.section === "market" ? (
-              <>
-                <option value="physical">Physical item</option>
-                <option value="digital">Digital product</option>
-              </>
-            ) : (
-              <>
-                <option value="service">Offer a service</option>
-                <option value="job">Post a job</option>
-              </>
-            )}
-          </select>
-        </label>
+            <label>
+              <span>Listing type</span>
+              <select
+                value={form.type}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    type: event.target.value as CreateForm["type"],
+                  }))
+                }
+              >
+                {form.section === "market" ? (
+                  <>
+                    <option value="physical">Physical item</option>
+                    <option value="digital">Digital product</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="service">Offer a service</option>
+                    <option value="job">Post a job</option>
+                  </>
+                )}
+              </select>
+            </label>
+          </>
+        )}
 
         <label>
           <span>Title</span>
@@ -2026,7 +2125,11 @@ function CreateSheet({
             onChange={(event) => setImage(event.target.files?.[0] ?? null)}
           />
           <small>
-            {image ? image.name : "JPG, PNG, or WebP · up to 5 MB"}
+            {image
+              ? image.name
+              : listing?.imageUrl
+                ? "Current image stays unless you choose a replacement."
+                : "JPG, PNG, or WebP · up to 5 MB"}
           </small>
         </label>
 
@@ -2183,7 +2286,8 @@ function CreateSheet({
         {!canPublish && (
           <div className="form-notice">
             <Info size={17} />
-            Open Easy Wallet from Telegram to publish under a verified profile.
+            Open Easy Wallet from Telegram to{" "}
+            {listing ? "edit this listing" : "publish under a verified profile"}.
           </div>
         )}
 
@@ -2192,7 +2296,14 @@ function CreateSheet({
           className="primary-action"
           disabled={busy || !canPublish}
         >
-          {busy ? "Publishing…" : "Publish listing"} <ArrowRight size={18} />
+          {busy
+            ? listing
+              ? "Saving…"
+              : "Publishing…"
+            : listing
+              ? "Save changes"
+              : "Publish listing"}{" "}
+          <ArrowRight size={18} />
         </button>
       </form>
     </BottomSheet>
@@ -2676,6 +2787,8 @@ export default function EzWalletApp() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [applications, setApplications] = useState<ApplicationSummary[]>([]);
   const [ownedListings, setOwnedListings] = useState<OwnerListing[]>([]);
+  const [selectedOwnerListing, setSelectedOwnerListing] =
+    useState<OwnerListing | null>(null);
   const [ownedListingsState, setOwnedListingsState] = useState<
     "loading" | "ready" | "error"
   >("ready");
@@ -3184,26 +3297,28 @@ export default function EzWalletApp() {
     setSheet("create");
   };
 
+  const uploadListingImage = async (image: File | null) => {
+    if (!image) return undefined;
+    const mediaForm = new FormData();
+    mediaForm.set("file", image);
+    const mediaResponse = await apiFetch("/api/media", {
+      method: "POST",
+      body: mediaForm,
+    });
+    const mediaData = (await mediaResponse.json()) as {
+      key?: string;
+      error?: string;
+    };
+    if (!mediaResponse.ok || !mediaData.key) {
+      throw new Error(mediaData.error ?? "Image could not be uploaded.");
+    }
+    return mediaData.key;
+  };
+
   const publishListing = async (form: CreateForm, image: File | null) => {
     setBusy(true);
     try {
-      let mediaKey: string | undefined;
-      if (image) {
-        const mediaForm = new FormData();
-        mediaForm.set("file", image);
-        const mediaResponse = await apiFetch("/api/media", {
-          method: "POST",
-          body: mediaForm,
-        });
-        const mediaData = (await mediaResponse.json()) as {
-          key?: string;
-          error?: string;
-        };
-        if (!mediaResponse.ok || !mediaData.key) {
-          throw new Error(mediaData.error ?? "Image could not be uploaded.");
-        }
-        mediaKey = mediaData.key;
-      }
+      const mediaKey = await uploadListingImage(image);
       const response = await apiFetch("/api/listings", {
         method: "POST",
         body: JSON.stringify({ ...form, mediaKey }),
@@ -3226,9 +3341,65 @@ export default function EzWalletApp() {
     }
   };
 
+  const updateListing = async (form: CreateForm, image: File | null) => {
+    if (!selectedOwnerListing) return;
+    setBusy(true);
+    try {
+      const mediaKey = await uploadListingImage(image);
+      const response = await apiFetch(
+        `/api/listings/${encodeURIComponent(selectedOwnerListing.id)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            ...form,
+            mediaKey,
+            expectedUpdatedAt: selectedOwnerListing.updatedAt,
+          }),
+        }
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        listing?: OwnerListing;
+      };
+      if (!response.ok || !data.listing) {
+        throw new Error(data.error ?? "Listing changes could not be saved.");
+      }
+      setOwnedListings((current) =>
+        current.map((listing) =>
+          listing.id === data.listing?.id ? data.listing : listing
+        )
+      );
+      await loadBootstrap();
+      setSelectedOwnerListing(null);
+      setSheet("listings");
+      telegram?.HapticFeedback?.notificationOccurred("success");
+      showToast("Listing changes are live.", "success");
+    } catch (error) {
+      telegram?.HapticFeedback?.notificationOccurred("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Listing changes could not be saved.",
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const startPayment = async (listing: Listing) => {
     if (!session) {
       showToast("Open Easy Wallet from Telegram to start a verified deal.", "error");
+      return;
+    }
+    if (
+      !listing.ownerWalletVerified ||
+      listing.ownerWalletNetwork !== config.network
+    ) {
+      showToast(
+        `The seller needs to verify a ${config.network} TON wallet before this listing can be purchased.`,
+        "error"
+      );
       return;
     }
     if (!wallet || !walletAddress) {
@@ -3679,6 +3850,7 @@ export default function EzWalletApp() {
             <ListingSheet
               listing={selectedListing}
               currentUser={session}
+              network={config.network}
               hasApplied={applications.some(
                 (application) =>
                   application.listingId === selectedListing.id &&
@@ -3711,6 +3883,10 @@ export default function EzWalletApp() {
             setCreateSection(tab === "work" ? "work" : "market");
             setSheet("create");
           }}
+          onEdit={(listing) => {
+            setSelectedOwnerListing(listing);
+            setSheet("edit");
+          }}
           onAction={updateListingLifecycle}
         />
 
@@ -3733,6 +3909,22 @@ export default function EzWalletApp() {
             initialSection={createSection}
             onClose={() => setSheet(null)}
             onSubmit={publishListing}
+            busy={busy}
+            canPublish={Boolean(session)}
+          />
+        )}
+
+        {sheet === "edit" && selectedOwnerListing && (
+          <CreateSheet
+            key={`${selectedOwnerListing.id}:${selectedOwnerListing.updatedAt}`}
+            open
+            listing={selectedOwnerListing}
+            initialSection={selectedOwnerListing.section}
+            onClose={() => {
+              setSelectedOwnerListing(null);
+              setSheet("listings");
+            }}
+            onSubmit={updateListing}
             busy={busy}
             canPublish={Boolean(session)}
           />

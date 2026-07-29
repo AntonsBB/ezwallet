@@ -30,8 +30,8 @@ remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 - **Market:** physical and digital listings, normalized categories, exact TON
   price ranges, type and price sorting, authenticated saved listings,
-  owner-only pause/reactivate/close controls, listing creation, direct purchase,
-  and reports.
+  owner-only conflict-safe editing and lifecycle controls, listing creation,
+  truthful Telegram/wallet seller signals, direct purchase, and reports.
 - **Work:** privacy-safe approximate-area map, opt-in nearby sorting, list
   fallback, authenticated favorites, services, jobs, applications, job-owner
   decisions, and hiring.

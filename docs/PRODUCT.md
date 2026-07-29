@@ -45,7 +45,8 @@ The production interface keeps the source identity while removing the old presen
 3. Browse active Market listings by normalized category, listing type, exact
    TON price range, or price/newest order. Empty results never fabricate stock
    and always offer a clear or create action.
-4. Open a listing and inspect seller reputation, delivery, price, and safety notes.
+4. Open a listing and inspect seller reputation, delivery, price, safety notes,
+   Telegram-authenticated status, and separate TON wallet-proof readiness.
 5. Connect and verify a TON wallet.
 6. Review an immutable quote showing the base price, 1% buyer fee, 1% seller fee, buyer total, seller proceeds, recipients, and network.
 7. Approve one transaction that atomically deploys and funds the deal's
@@ -71,8 +72,9 @@ coordinates are not published in a listing.
 
 1. Create a Market listing, service, or job.
 2. Upload supported images and provide a realistic description, price/budget, delivery method, and location.
-3. Publish, pause, reactivate, or permanently close the post. Editing remains a
-   separate release item.
+3. Publish, edit, pause, reactivate, or permanently close the post. Section and
+   listing type are immutable; edits use the last-seen version and are blocked
+   while an application or deal is active.
 4. Manage applications and active deals from Profile.
 
 ### Wallet

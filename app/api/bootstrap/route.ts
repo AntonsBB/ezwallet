@@ -32,6 +32,8 @@ export async function GET() {
         ownerRatingMilli: users.ratingMilli,
         ownerReviewCount: users.reviewCount,
         ownerDealsCompleted: users.dealsCompleted,
+        ownerWalletVerifiedAt: users.walletVerifiedAt,
+        ownerWalletNetwork: users.walletNetwork,
       })
       .from(listings)
       .innerJoin(users, eq(listings.ownerId, users.id))
@@ -43,8 +45,15 @@ export async function GET() {
       getBinding("ESCROW_ARBITRATOR_ADDRESS")
     );
 
+    const publicListings = rows.map(
+      ({ ownerWalletVerifiedAt, ...listing }) => ({
+        ...listing,
+        ownerWalletVerified: Boolean(ownerWalletVerifiedAt),
+      })
+    );
+
     return Response.json({
-      listings: rows,
+      listings: publicListings,
       config: {
         feeBps: 100,
         network:

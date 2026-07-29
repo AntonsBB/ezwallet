@@ -1,14 +1,5 @@
 import { tonToNano } from "./format";
-
-export const marketCategoryOptions = [
-  "Electronics",
-  "Mobility",
-  "Vehicles",
-  "Home",
-  "Fashion",
-  "Digital",
-  "Other",
-] as const;
+import { marketCategoryOptions } from "./listing-categories";
 
 export const marketListingTypes = ["all", "physical", "digital"] as const;
 export type MarketListingType = (typeof marketListingTypes)[number];

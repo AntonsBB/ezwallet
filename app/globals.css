@@ -2324,6 +2324,33 @@ img {
   color: #2484c7;
 }
 
+.seller-verification {
+  margin-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.seller-row .seller-verification span {
+  min-height: 20px;
+  margin: 0;
+  padding: 0 6px;
+  color: #246342;
+  background: #eaf6ee;
+  border-radius: 999px;
+  font-size: 7px;
+  font-weight: 850;
+}
+
+.seller-row .seller-verification span.is-pending {
+  color: #7a6340;
+  background: #f5f1e8;
+}
+
+.seller-row .seller-verification span svg {
+  color: currentColor;
+}
+
 .seller-row span {
   margin-top: 4px;
   display: flex;
@@ -2428,6 +2455,27 @@ img {
   padding: 16px 18px max(22px, env(safe-area-inset-bottom));
   display: grid;
   gap: 14px;
+}
+
+.edit-listing-lock {
+  padding: 13px;
+  color: #5e665c;
+  background: #f3f7f1;
+  border: 1px solid #e0e8dd;
+  border-radius: 14px;
+}
+
+.edit-listing-lock strong {
+  margin-top: 5px;
+  display: block;
+  color: #252a24;
+  font-size: 10px;
+}
+
+.edit-listing-lock p {
+  margin: 5px 0 0;
+  font-size: 9px;
+  line-height: 1.48;
 }
 
 .segmented-control {

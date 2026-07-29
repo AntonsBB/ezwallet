@@ -62,7 +62,8 @@ funds, external promotion, bot deletion, or unattended account changes.
 - [x] Add owner-only pause, reactivate, and permanent-close listing controls.
 - [x] Replace unearned rating/response claims with review- and deal-backed
   reputation states.
-- [ ] Add listing editing and stronger verified seller context.
+- [x] Add owner-only, conflict-safe listing editing and distinguish
+  Telegram-authenticated profiles from proof-verified TON wallets.
 - [x] Select and implement the approximate-area Work map direction.
 - [x] Add privacy-preserving approximate coordinates and uncertainty radii.
 - [x] Implement map/list synchronization, opt-in distance sorting, map failure

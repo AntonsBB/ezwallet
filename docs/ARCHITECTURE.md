@@ -103,7 +103,10 @@ provider query that finds no matching finalized message.
   discovery without rewriting an existing deal.
 - Deal events and ledger entries are append-only.
 - Prepared and submitted chain actions are durable and idempotently reconciled.
-- Listing edits never rewrite a previously accepted quote.
+- Listing edits are owner-scoped and compare the last-seen `updatedAt` value.
+  Section and type are immutable, terminal posts cannot be edited, and any
+  active deal or open application blocks the edit. Previously accepted quotes
+  are never rewritten.
 - Public listing coordinates are stored as rounded integer microdegrees with a
   minimum uncertainty radius; exact device coordinates are discarded.
 - Nearby sorting is opt-in. The browser immediately rounds the device result,
