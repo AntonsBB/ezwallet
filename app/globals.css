@@ -159,6 +159,19 @@ img {
   font-size: 10px;
   font-weight: 800;
   white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.network-pill:hover {
+  background: #fff;
+  border-color: #cfd2cc;
+}
+
+.network-pill:active {
+  transform: translateY(1px);
 }
 
 .network-pill i {

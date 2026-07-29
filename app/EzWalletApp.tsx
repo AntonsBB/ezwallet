@@ -396,20 +396,31 @@ function BottomNavigation({
 function AppHeader({
   session,
   connected,
+  onWallet,
   onCreate,
 }: {
   session: User | null;
   connected: boolean;
+  onWallet: () => void;
   onCreate: () => void;
 }) {
   return (
     <header className="app-header">
       <Brand />
       <div className="header-actions">
-        <span className={connected ? "network-pill is-online" : "network-pill"}>
+        <button
+          type="button"
+          className={connected ? "network-pill is-online" : "network-pill"}
+          onClick={onWallet}
+          aria-label={
+            connected
+              ? "Open wallet and account details"
+              : "Connect a wallet to create an account"
+          }
+        >
           <i />
           {connected ? "Wallet connected" : "Connect wallet"}
-        </span>
+        </button>
         <button
           type="button"
           className="header-avatar"
@@ -4096,6 +4107,13 @@ export default function EzWalletApp() {
         <AppHeader
           session={session}
           connected={Boolean(wallet)}
+          onWallet={() => {
+            if (wallet) {
+              changeTab("wallet");
+              return;
+            }
+            void openWalletConnection();
+          }}
           onCreate={() => openCreate()}
         />
 
