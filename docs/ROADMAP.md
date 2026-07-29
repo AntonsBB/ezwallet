@@ -18,7 +18,10 @@ funds, external promotion, bot deletion, or unattended account changes.
 - [x] Recover lost browser callbacks and expire stale requests only after an
   available provider finds no finalized transaction.
 - [x] Prevent duplicate active deals and duplicate pending chain actions.
-- [ ] Add mocked TON Center response/replay/failure integration tests.
+- [x] Add adversarial hash-encoding, address-normalization, and terminal-payout
+  verification tests.
+- [x] Add mocked TON Center response, replay, pinned-state, emulation, and
+  provider-outage tests.
 - [ ] Run a second independent contract/security review.
 - [ ] Complete two-party testnet settlement and dispute drills.
 
