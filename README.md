@@ -21,7 +21,8 @@ It is intentionally non-custodial:
 
 The product and trust-boundary specifications live in
 [`docs/PRODUCT.md`](docs/PRODUCT.md) and
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The ordered launch gates and
+remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Product surface
 
