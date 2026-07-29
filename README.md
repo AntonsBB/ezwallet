@@ -29,7 +29,8 @@ remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 - **Market:** physical and digital listings, search, category filtering,
   listing creation, direct purchase, reports.
-- **Work:** services, jobs, applications, job-owner decisions, and hiring.
+- **Work:** privacy-safe approximate-area map, opt-in nearby sorting, list
+  fallback, services, jobs, applications, job-owner decisions, and hiring.
 - **Wallet:** TON Connect, proof verification, transparent fee breakdown,
   per-deal escrow, delivery/completion/dispute actions, reviews.
 - **Profile:** Telegram identity, public reputation, editable details, listings,
@@ -47,6 +48,7 @@ and civic voting are deliberately outside this release.
 - Cloudflare D1 with Drizzle
 - Cloudflare Workers KV
 - Telegram Mini Apps and Bot API
+- Leaflet with attributed OpenStreetMap tiles
 - TON Connect UI, TON proof, TON Center v2/v3
 - Acton/Tolk native-TON escrow contract
 
@@ -57,6 +59,7 @@ Node.js `>=22.13.0` is required.
 ```bash
 npm ci
 copy .env.example .env.local
+npm run db:migrate:local
 npm run dev
 ```
 
@@ -113,6 +116,7 @@ Set these runtime bindings before enabling payments:
 | `TELEGRAM_WEBHOOK_SECRET` | yes, secret | authenticates Telegram webhook requests |
 | `RECONCILE_SECRET` | yes, secret | protects manual reconciliation fallback |
 | `TONCENTER_API_KEY` | recommended, secret | raises TON Center limits |
+| `NEXT_PUBLIC_MAP_TILE_URL` | optional | changes the attributed interactive map tile provider without a code edit |
 
 Do not enable mainnet until all participants can verify mainnet wallets, the fee
 and arbitrator addresses are reviewed out-of-band, the escrow contract has an

@@ -33,30 +33,34 @@ funds, external promotion, bot deletion, or unattended account changes.
 - [x] Verify all D1 migrations against a fresh database.
 - [x] Restore Cloudflare authorization.
 - [x] Create and bind the free `production-easy-wallet-media` KV namespace.
-- [ ] Apply the remote D1 migrations.
-- [ ] Configure encrypted Telegram, webhook, reconciler, and TON Center secrets.
+- [x] Apply the remote D1 migrations.
+- [x] Configure encrypted Telegram, webhook, and reconciler secrets.
+- [ ] Add a TON Center API key if production provider limits require one.
 - [ ] Configure reviewed testnet platform and arbitrator addresses.
-- [ ] Remove the old CNAME and deploy the Worker custom domain.
-- [ ] Verify TLS, security headers, manifest, webhook, cron, D1, KV, and rollback.
+- [x] Remove the old CNAME and deploy the Worker custom domain.
+- [x] Verify TLS, security headers, manifest, webhook, cron, D1, and KV.
+- [ ] Perform and document a production rollback drill.
 
 ## 3. Dedicated Telegram identity
 
-- [ ] Create a new Easy Wallet bot in BotFather after stable HTTPS is live.
-- [ ] Store its token only in Cloudflare's encrypted secret store.
-- [ ] Configure the menu Mini App, domain, description, avatar, commands, and
+- [x] Create a new Easy Wallet bot in BotFather after stable HTTPS is live.
+- [x] Store its token only in Cloudflare's encrypted secret store.
+- [x] Configure the menu Mini App, domain, description, commands, and
   secret-validated webhook.
-- [ ] Verify Telegram iOS, Android, Desktop, and Web launch flows.
-- [ ] Send the stable Mini App link to Bamboo without modifying Bamboo itself.
+- [ ] Add the final reviewed bot avatar.
+- [x] Verify Telegram Web launch and signed-session flows.
+- [ ] Verify Telegram iOS, Android, and Desktop launch flows.
+- [x] Send the stable Mini App link to Bamboo without modifying Bamboo itself.
 
 ## 4. Marketplace and local work product
 
-- [ ] Expand Market into a category-led Facebook Marketplace-style browse flow.
+- [x] Expand Market into a category-led Facebook Marketplace-style browse flow.
 - [ ] Add saved searches, favorites, listing lifecycle controls, and stronger
   seller/reputation context.
-- [ ] Select one of the prepared Work map directions.
-- [ ] Add privacy-preserving approximate coordinates and radius filters.
-- [ ] Implement map/list synchronization, distance sorting, and manual-location
-  fallback without publishing private exact addresses.
+- [x] Select and implement the approximate-area Work map direction.
+- [x] Add privacy-preserving approximate coordinates and uncertainty radii.
+- [x] Implement map/list synchronization, opt-in distance sorting, map failure
+  fallback, and area-free publishing without retaining exact device coordinates.
 - [ ] Complete delivery evidence, dispute evidence, moderator queue, and
   arbitrator decision history.
 - [ ] Complete empty, loading, offline, retry, error, and restricted-account

@@ -7,6 +7,8 @@
 - Relational data: Cloudflare D1 with tracked SQL migrations.
 - Listing media: Cloudflare Workers KV with size/type validation, immutable
   values, and unguessable object keys.
+- Local discovery: client-side Leaflet map with attributed OpenStreetMap tiles,
+  rounded listing areas, and a complete list fallback.
 - Wallet integration: TON Connect in the browser plus server-side TON proof verification.
 - Escrow: one deterministic native-TON contract per deal, compiled from
   Acton/Tolk and deployed atomically with buyer funding.
@@ -96,6 +98,13 @@ provider query that finds no matching finalized message.
 - Listing edits never rewrite a previously accepted quote.
 - Public listing coordinates are stored as rounded integer microdegrees with a
   minimum uncertainty radius; exact device coordinates are discarded.
+- Nearby sorting is opt-in. The browser immediately rounds the device result,
+  retains only that public-area point in memory, and never sends the device
+  position to the API. Map circles communicate listing uncertainty instead of
+  implying a precise address.
+- Map tiles are best-effort presentation data. Tile or permission failure never
+  hides listings or blocks search, filtering, opening a post, or publishing
+  without an area.
 - State transitions are checked on the server.
 
 ## Deployment secrets

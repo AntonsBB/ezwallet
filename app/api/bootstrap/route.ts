@@ -4,7 +4,7 @@ import { listings, users } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const db = getDb();
     const rows = await db
@@ -38,17 +38,10 @@ export async function GET(request: Request) {
       .where(eq(listings.status, "active"))
       .orderBy(desc(listings.createdAt));
 
-    const url = new URL(request.url);
-    const localPreview = ["localhost", "127.0.0.1", "terminal.local"].includes(
-      url.hostname
+    const hasFeeAddress = Boolean(getBinding("PLATFORM_FEE_ADDRESS"));
+    const hasArbitratorAddress = Boolean(
+      getBinding("ESCROW_ARBITRATOR_ADDRESS")
     );
-    const testnet = getBinding("TON_NETWORK") !== "mainnet";
-    const hasFeeAddress =
-      Boolean(getBinding("PLATFORM_FEE_ADDRESS")) ||
-      (localPreview && testnet);
-    const hasArbitratorAddress =
-      Boolean(getBinding("ESCROW_ARBITRATOR_ADDRESS")) ||
-      (localPreview && testnet);
 
     return Response.json({
       listings: rows,

@@ -16,7 +16,10 @@ export default function PrivacyPage() {
           username, language, and profile photo when you open the Mini App. We
           store the profile fields you choose, listings, applications, deal
           events, reviews, reports, wallet public addresses, and payment
-          references required to run the marketplace.
+          references required to run the marketplace. If you explicitly attach
+          a map area, coordinates are rounded before they enter application
+          state and are stored with an uncertainty radius; the exact device
+          position is discarded.
         </p>
       </section>
       <section>
@@ -39,19 +42,22 @@ export default function PrivacyPage() {
         <h2>Service providers and retention</h2>
         <p>
           The application uses Telegram, the TON network and TON data providers,
-          Cloudflare infrastructure, and GitHub for source distribution. We
-          retain marketplace and ledger records while needed for safety,
-          disputes, accounting, and legal compliance; short-lived wallet
-          challenges expire within minutes.
+          Cloudflare infrastructure, OpenStreetMap map tiles, and GitHub for
+          source distribution. When you view the map, the tile service receives
+          ordinary network request data such as your IP address and this
+          application&apos;s origin. We retain marketplace and ledger records
+          while needed for safety, disputes, accounting, and legal compliance;
+          short-lived wallet challenges expire within minutes.
         </p>
       </section>
       <section>
         <h2>Your choices</h2>
         <p>
           You may edit profile information, pause or close listings, disconnect
-          your wallet, and ask for deletion where applicable. Some deal,
-          moderation, and public blockchain records must be retained or cannot
-          be erased.
+          your wallet, use the Work list without sharing an area, remove an
+          attached approximate area before publishing, and ask for deletion
+          where applicable. Some deal, moderation, and public blockchain records
+          must be retained or cannot be erased.
         </p>
       </section>
     </main>

@@ -22,11 +22,6 @@ import {
   rateLimitResponse,
 } from "@/lib/security";
 
-const LOCAL_TESTNET_FEE_ADDRESS =
-  "kQBERERERERERERERERERERERERERERERERERERERERERNHq";
-const LOCAL_TESTNET_ARBITRATOR_ADDRESS =
-  "0QBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVaVg";
-
 function normalizeAddress(value: string, testnet: boolean) {
   return Address.parse(value).toString({ bounceable: false, testOnly: testnet });
 }
@@ -109,15 +104,8 @@ export async function POST(
         { status: 409 }
       );
     }
-    const localPreview = ["localhost", "127.0.0.1", "terminal.local"].includes(
-      new URL(request.url).hostname
-    );
-    const feeAddress =
-      getBinding("PLATFORM_FEE_ADDRESS") ??
-      (localPreview && testnet ? LOCAL_TESTNET_FEE_ADDRESS : undefined);
-    const arbitratorAddress =
-      getBinding("ESCROW_ARBITRATOR_ADDRESS") ??
-      (localPreview && testnet ? LOCAL_TESTNET_ARBITRATOR_ADDRESS : undefined);
+    const feeAddress = getBinding("PLATFORM_FEE_ADDRESS");
+    const arbitratorAddress = getBinding("ESCROW_ARBITRATOR_ADDRESS");
     if (!feeAddress || !arbitratorAddress) {
       return noStoreJson(
         {

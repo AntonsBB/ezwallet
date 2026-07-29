@@ -25,11 +25,6 @@ const createDealSchema = z.object({
   listingId: z.string().min(1).max(80),
 });
 
-const LOCAL_TESTNET_FEE_ADDRESS =
-  "kQBERERERERERERERERERERERERERERERERERERERERERNHq";
-const LOCAL_TESTNET_ARBITRATOR_ADDRESS =
-  "0QBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVaVg";
-
 function normalizeAddress(value: string, testnet: boolean) {
   return Address.parse(value).toString({
     bounceable: false,
@@ -101,10 +96,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const url = new URL(request.url);
-    const localPreview = ["localhost", "127.0.0.1", "terminal.local"].includes(
-      url.hostname
-    );
     const network =
       getBinding("TON_NETWORK") === "mainnet" ? "mainnet" : "testnet";
     if (buyer.walletNetwork !== network) {
@@ -120,16 +111,8 @@ export async function POST(request: Request) {
       );
     }
     const testnet = network === "testnet";
-    const configuredFeeAddress = getBinding("PLATFORM_FEE_ADDRESS");
-    const feeAddress =
-      configuredFeeAddress ??
-      (localPreview && testnet ? LOCAL_TESTNET_FEE_ADDRESS : null);
-    const configuredArbitratorAddress = getBinding(
-      "ESCROW_ARBITRATOR_ADDRESS"
-    );
-    const arbitratorAddress =
-      configuredArbitratorAddress ??
-      (localPreview && testnet ? LOCAL_TESTNET_ARBITRATOR_ADDRESS : null);
+    const feeAddress = getBinding("PLATFORM_FEE_ADDRESS");
+    const arbitratorAddress = getBinding("ESCROW_ARBITRATOR_ADDRESS");
 
     if (!feeAddress || !arbitratorAddress) {
       return Response.json(

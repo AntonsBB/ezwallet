@@ -17,14 +17,18 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
+  Crosshair,
   Heart,
   House,
   Info,
   Laptop,
+  List as ListIcon,
+  Map as MapIcon,
   MapPin,
   MessageCircle,
   PackageCheck,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
   Shapes,
@@ -36,12 +40,20 @@ import {
   Store,
   UserRound,
   WalletCards,
+  WifiOff,
   X,
   Zap,
   FileDown,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { calculateTransactionFees, nanoToTon } from "@/lib/format";
+import { normalizePublicCoordinates } from "@/lib/geo";
+import {
+  approximateDistance,
+  formatApproximateDistance,
+  sortListingsByDistance,
+} from "@/lib/work-discovery";
+import { WorkMap, type PublicMapPoint } from "@/app/WorkMap";
 
 type Tab = "market" | "work" | "wallet" | "profile";
 type SheetName =
@@ -347,10 +359,12 @@ function ListingCard({
   listing,
   onOpen,
   wide = false,
+  proximity = null,
 }: {
   listing: Listing;
   onOpen: (listing: Listing) => void;
   wide?: boolean;
+  proximity?: string | null;
 }) {
   return (
     <button
@@ -381,6 +395,12 @@ function ListingCard({
           {formatRating(listing.ownerRatingMilli)}
           <i>·</i>
           {listing.location}
+          {proximity && (
+            <>
+              <i>·</i>
+              {proximity}
+            </>
+          )}
         </span>
         <span className="listing-footer">
           <b>{nanoToTon(listing.priceNano)} TON</b>
@@ -555,6 +575,23 @@ function WorkScreen({
   onOpen: (listing: Listing) => void;
   onCreate: () => void;
 }) {
+  const [view, setView] = useState<"map" | "list">("map");
+  const [referencePoint, setReferencePoint] =
+    useState<PublicMapPoint | null>(null);
+  const orderedListings = useMemo(
+    () => sortListingsByDistance(listings, referencePoint),
+    [listings, referencePoint]
+  );
+  const mappedListings = useMemo(
+    () =>
+      orderedListings.filter(
+        (listing) =>
+          listing.latitudeE6 !== null && listing.longitudeE6 !== null
+      ),
+    [orderedListings]
+  );
+  const remoteOrUnmappedCount = orderedListings.length - mappedListings.length;
+
   return (
     <main className="screen work-screen">
       <section className="work-hero">
@@ -586,6 +623,101 @@ function WorkScreen({
         onSelect={setCategory}
       />
 
+      <section className="work-view-heading" aria-labelledby="work-view-title">
+        <div>
+          <span>Explore work</span>
+          <h2 id="work-view-title">
+            {referencePoint ? "Sorted around your area" : "Browse every open post"}
+          </h2>
+        </div>
+        <div className="work-view-toggle" aria-label="Work results view">
+          <button
+            type="button"
+            className={view === "map" ? "is-active" : ""}
+            aria-pressed={view === "map"}
+            onClick={() => setView("map")}
+          >
+            <MapIcon size={14} /> Map
+          </button>
+          <button
+            type="button"
+            className={view === "list" ? "is-active" : ""}
+            aria-pressed={view === "list"}
+            onClick={() => setView("list")}
+          >
+            <ListIcon size={14} /> List
+          </button>
+        </div>
+      </section>
+
+      {view === "map" && (
+        <>
+          <WorkMap
+            listings={mappedListings}
+            referencePoint={referencePoint}
+            onReferencePointChange={setReferencePoint}
+            onOpen={(listingId) => {
+              const listing = orderedListings.find(
+                (candidate) => candidate.id === listingId
+              );
+              if (listing) onOpen(listing);
+            }}
+          />
+          {mappedListings.length > 0 && (
+            <section
+              className="work-map-results"
+              aria-label="Work shown on the map"
+            >
+              {mappedListings.map((listing) => {
+                const distance = formatApproximateDistance(
+                  approximateDistance(listing, referencePoint)
+                );
+                return (
+                  <button
+                    key={listing.id}
+                    type="button"
+                    onClick={() => onOpen(listing)}
+                  >
+                    <span
+                      className={
+                        listing.type === "job"
+                          ? "work-result-icon is-job"
+                          : "work-result-icon"
+                      }
+                    >
+                      <BriefcaseBusiness size={16} />
+                    </span>
+                    <span>
+                      <small>
+                        {listing.type} · {listing.location}
+                      </small>
+                      <strong>{listing.title}</strong>
+                      <em>
+                        {distance ??
+                          `${listing.locationRadiusMeters ?? 1_000} m approximate area`}
+                      </em>
+                    </span>
+                    <b>{nanoToTon(listing.priceNano)} TON</b>
+                  </button>
+                );
+              })}
+            </section>
+          )}
+          {remoteOrUnmappedCount > 0 && (
+            <button
+              type="button"
+              className="unmapped-work-link"
+              onClick={() => setView("list")}
+            >
+              <ListIcon size={15} />
+              See {remoteOrUnmappedCount} remote or area-free{" "}
+              {remoteOrUnmappedCount === 1 ? "post" : "posts"} in List
+              <ChevronRight size={15} />
+            </button>
+          )}
+        </>
+      )}
+
       <section className="work-cta">
         <div>
           <span>Need something done?</span>
@@ -596,26 +728,34 @@ function WorkScreen({
         </button>
       </section>
 
-      <section className="content-section work-list-section">
-        <SectionHeading title="Recommended for you" />
-        <div className="work-list">
-          {listings.map((listing) => (
-            <ListingCard
-              key={listing.id}
-              listing={listing}
-              onOpen={onOpen}
-              wide
-            />
-          ))}
-        </div>
-        {!listings.length && (
-          <div className="empty-state">
-            <BriefcaseBusiness size={24} />
-            <strong>No work matches</strong>
-            <p>Try clearing a filter.</p>
+      {view === "list" && (
+        <section className="content-section work-list-section">
+          <SectionHeading
+            title={referencePoint ? "Nearest first" : "Recommended for you"}
+            action={`${orderedListings.length} open`}
+          />
+          <div className="work-list">
+            {orderedListings.map((listing) => (
+              <ListingCard
+                key={listing.id}
+                listing={listing}
+                onOpen={onOpen}
+                proximity={formatApproximateDistance(
+                  approximateDistance(listing, referencePoint)
+                )}
+                wide
+              />
+            ))}
           </div>
-        )}
-      </section>
+          {!orderedListings.length && (
+            <div className="empty-state">
+              <BriefcaseBusiness size={24} />
+              <strong>No work matches</strong>
+              <p>Try clearing a filter.</p>
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }
@@ -1122,6 +1262,9 @@ type CreateForm = {
   category: string;
   priceTon: string;
   location: string;
+  latitude?: number;
+  longitude?: number;
+  locationRadiusMeters?: number;
   delivery: string;
 };
 
@@ -1133,6 +1276,9 @@ const initialCreateForm: CreateForm = {
   category: "Other",
   priceTon: "",
   location: "Riga",
+  latitude: undefined,
+  longitude: undefined,
+  locationRadiusMeters: undefined,
   delivery: "Arrange in chat",
 };
 
@@ -1157,12 +1303,60 @@ function CreateSheet({
     type: initialSection === "market" ? "physical" : "service",
   }));
   const [image, setImage] = useState<File | null>(null);
+  const [locationPending, setLocationPending] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
   const setSection = (section: "market" | "work") => {
     setForm((current) => ({
       ...current,
       section,
       type: section === "market" ? "physical" : "service",
+      latitude: section === "market" ? undefined : current.latitude,
+      longitude: section === "market" ? undefined : current.longitude,
+      locationRadiusMeters:
+        section === "market" ? undefined : current.locationRadiusMeters,
     }));
+  };
+  const attachApproximateArea = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage("Location is not available in this browser.");
+      return;
+    }
+    setLocationPending(true);
+    setLocationMessage("");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const rounded = normalizePublicCoordinates({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          radiusMeters: form.locationRadiusMeters ?? 1_000,
+        });
+        if (rounded) {
+          setForm((current) => ({
+            ...current,
+            latitude: rounded.latitudeE6 / 1_000_000,
+            longitude: rounded.longitudeE6 / 1_000_000,
+            locationRadiusMeters: rounded.radiusMeters,
+          }));
+          setLocationMessage(
+            "Approximate area attached. Your exact position was discarded."
+          );
+        }
+        setLocationPending(false);
+      },
+      (error) => {
+        setLocationPending(false);
+        setLocationMessage(
+          error.code === error.PERMISSION_DENIED
+            ? "Location permission was not granted. You can publish without a map area."
+            : "Your area could not be found. Try again or publish without it."
+        );
+      },
+      {
+        enableHighAccuracy: false,
+        maximumAge: 300_000,
+        timeout: 8_000,
+      }
+    );
   };
 
   return (
@@ -1307,6 +1501,69 @@ function CreateSheet({
             }
           />
         </label>
+        {form.section === "work" && (
+          <div className="listing-location-share">
+            <div>
+              <span>
+                <MapPin size={16} />
+                Approximate map area
+              </span>
+              <p>
+                Optional. The map shows an uncertainty circle, never a precise
+                address.
+              </p>
+            </div>
+            {form.latitude === undefined ? (
+              <button
+                type="button"
+                onClick={attachApproximateArea}
+                disabled={locationPending}
+              >
+                <Crosshair size={15} />
+                {locationPending ? "Finding area…" : "Add my area"}
+              </button>
+            ) : (
+              <div className="location-share-active">
+                <label>
+                  <span>Area size</span>
+                  <select
+                    value={form.locationRadiusMeters ?? 1_000}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        locationRadiusMeters: Number(event.target.value),
+                      }))
+                    }
+                  >
+                    <option value={500}>500 m</option>
+                    <option value={1000}>1 km</option>
+                    <option value={3000}>3 km</option>
+                    <option value={10000}>10 km</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm((current) => ({
+                      ...current,
+                      latitude: undefined,
+                      longitude: undefined,
+                      locationRadiusMeters: undefined,
+                    }));
+                    setLocationMessage("Approximate area removed.");
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+            {locationMessage && (
+              <p className="location-share-message" role="status">
+                {locationMessage}
+              </p>
+            )}
+          </div>
+        )}
         <label>
           <span>Delivery or timing</span>
           <input
@@ -1756,10 +2013,57 @@ function Toast({
   );
 }
 
+function MarketplaceStatus({
+  state,
+  message,
+  onRetry,
+}: {
+  state: "loading" | "ready" | "error";
+  message: string;
+  onRetry: () => void;
+}) {
+  if (state === "ready") return null;
+  return (
+    <div
+      className={
+        state === "error"
+          ? "marketplace-status is-error"
+          : "marketplace-status"
+      }
+      role={state === "error" ? "alert" : "status"}
+    >
+      <span>
+        {state === "error" ? <WifiOff size={17} /> : <RefreshCw size={17} />}
+      </span>
+      <div>
+        <strong>
+          {state === "error"
+            ? "Marketplace data is unavailable"
+            : "Loading real marketplace data"}
+        </strong>
+        <p>
+          {state === "error"
+            ? message
+            : "Listings and payment readiness are being checked."}
+        </p>
+      </div>
+      {state === "error" && (
+        <button type="button" onClick={onRetry}>
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function EzWalletApp() {
   const [tab, setTab] = useState<Tab>("market");
   const [sheet, setSheet] = useState<SheetName>(null);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [bootstrapState, setBootstrapState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [bootstrapError, setBootstrapError] = useState("");
   const [config, setConfig] = useState<AppConfig>({
     feeBps: 100,
     network: "testnet",
@@ -1834,14 +2138,29 @@ export default function EzWalletApp() {
   );
 
   const loadBootstrap = useCallback(async () => {
-    const response = await fetch("/api/bootstrap", { cache: "no-store" });
-    if (!response.ok) throw new Error("Could not load the marketplace.");
-    const data = (await response.json()) as {
-      listings: Listing[];
-      config: AppConfig;
-    };
-    setListings(data.listings);
-    setConfig(data.config);
+    setBootstrapState("loading");
+    setBootstrapError("");
+    try {
+      const response = await fetch("/api/bootstrap", { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not load the marketplace.");
+      const data = (await response.json()) as {
+        listings: Listing[];
+        config: AppConfig;
+      };
+      setListings(data.listings);
+      setConfig(data.config);
+      setBootstrapState("ready");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Marketplace data could not be loaded.";
+      setBootstrapError(
+        `${message} Existing results may be incomplete. Check your connection and retry.`
+      );
+      setBootstrapState("error");
+      throw error;
+    }
   }, []);
 
   const loadSession = useCallback(async () => {
@@ -1876,9 +2195,12 @@ export default function EzWalletApp() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void Promise.all([loadBootstrap(), loadSession()]).catch((error) => {
+      void loadBootstrap().catch(() => undefined);
+      void loadSession().catch((error) => {
         showToast(
-          error instanceof Error ? error.message : "Easy Wallet could not start.",
+          error instanceof Error
+            ? error.message
+            : "Telegram session could not be verified.",
           "error"
         );
       });
@@ -2330,6 +2652,13 @@ export default function EzWalletApp() {
         />
 
         <div className="screen-scroll">
+          <MarketplaceStatus
+            state={bootstrapState}
+            message={bootstrapError}
+            onRetry={() => {
+              void loadBootstrap().catch(() => undefined);
+            }}
+          />
           {tab === "market" && (
             <MarketScreen
               listings={filteredMarket}

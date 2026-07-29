@@ -12,8 +12,8 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "site-creator-d1",
-			"database_id": "00000000-0000-4000-8000-000000000000",
+			"database_name": "easy-wallet-local",
+			"database_id": "7c1f9b7d-9de3-4ec9-90d5-6ff5d3e474c6",
 			"migrations_dir": "drizzle"
 		}
 	],
