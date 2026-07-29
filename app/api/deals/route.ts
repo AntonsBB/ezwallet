@@ -8,7 +8,11 @@ import {
   listings,
   users,
 } from "@/db/schema";
-import { authenticateRequest, authErrorResponse } from "@/lib/auth";
+import {
+  authenticateRequest,
+  AuthenticationError,
+  authErrorResponse,
+} from "@/lib/auth";
 import { calculateTransactionFees } from "@/lib/format";
 import {
   inspectPaymentConfiguration,
@@ -50,6 +54,7 @@ export async function POST(request: Request) {
       .select({
         id: listings.id,
         ownerId: listings.ownerId,
+        type: listings.type,
         title: listings.title,
         priceNano: listings.priceNano,
         status: listings.status,
@@ -62,7 +67,10 @@ export async function POST(request: Request) {
       .where(
         and(
           eq(listings.id, payload.listingId),
-          eq(listings.status, "active")
+          eq(listings.status, "active"),
+          eq(listings.moderationStatus, "approved"),
+          inArray(listings.type, ["physical", "digital", "service"]),
+          eq(users.moderationStatus, "active")
         )
       )
       .limit(1);
@@ -74,6 +82,12 @@ export async function POST(request: Request) {
       return Response.json(
         { error: "You cannot buy your own listing." },
         { status: 400 }
+      );
+    }
+    if (buyer.moderationStatus !== "active") {
+      return Response.json(
+        { error: "This profile cannot start new deals right now." },
+        { status: 403 }
       );
     }
     if (!buyer.walletAddress || !buyer.walletVerifiedAt || !buyer.walletNetwork) {
@@ -112,7 +126,6 @@ export async function POST(request: Request) {
       network,
       platformFeeAddress: getBinding("PLATFORM_FEE_ADDRESS"),
       arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
-      arbitratorTelegramId: getBinding("ESCROW_ARBITRATOR_TELEGRAM_ID"),
     });
     if (!paymentConfiguration.ready) {
       return Response.json(
@@ -325,11 +338,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    if (
-      error instanceof Error &&
-      (error.message.includes("Telegram") ||
-        error.message.includes("preview user"))
-    ) {
+    if (error instanceof AuthenticationError) {
       return authErrorResponse(error);
     }
     console.error(

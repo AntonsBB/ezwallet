@@ -5,7 +5,6 @@ type PaymentConfigurationInput = {
   network: TonNetwork;
   platformFeeAddress?: string;
   arbitratorAddress?: string;
-  arbitratorTelegramId?: string;
 };
 
 type ReadyPaymentConfiguration = {
@@ -14,7 +13,6 @@ type ReadyPaymentConfiguration = {
   network: TonNetwork;
   platformWalletAddress: string;
   arbitratorWalletAddress: string;
-  arbitratorTelegramId: string;
 };
 
 type BlockedPaymentConfiguration = {
@@ -61,13 +59,6 @@ export function inspectPaymentConfiguration(
     }
   }
 
-  const arbitratorTelegramId = input.arbitratorTelegramId?.trim();
-  if (!arbitratorTelegramId) {
-    blockers.push("arbitrator_operator_missing");
-  } else if (!/^[1-9]\d{0,18}$/.test(arbitratorTelegramId)) {
-    blockers.push("arbitrator_operator_invalid");
-  }
-
   if (
     platform &&
     arbitrator &&
@@ -76,7 +67,7 @@ export function inspectPaymentConfiguration(
     blockers.push("wallet_roles_not_distinct");
   }
 
-  if (blockers.length || !platform || !arbitrator || !arbitratorTelegramId) {
+  if (blockers.length || !platform || !arbitrator) {
     return { ready: false, blockers, network: input.network };
   }
 
@@ -92,6 +83,5 @@ export function inspectPaymentConfiguration(
       arbitrator.toRawString(),
       input.network
     ),
-    arbitratorTelegramId,
   };
 }

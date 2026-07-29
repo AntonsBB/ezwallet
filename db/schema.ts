@@ -11,7 +11,7 @@ export const users = sqliteTable(
   "users",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    telegramId: text("telegram_id").notNull(),
+    telegramId: text("telegram_id"),
     username: text("username"),
     displayName: text("display_name").notNull(),
     photoUrl: text("photo_url"),
@@ -33,7 +33,14 @@ export const users = sqliteTable(
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
-  (table) => [uniqueIndex("users_telegram_id_idx").on(table.telegramId)]
+  (table) => [
+    uniqueIndex("users_telegram_id_idx").on(table.telegramId),
+    uniqueIndex("users_wallet_identity_idx")
+      .on(table.walletNetwork, table.walletAddress)
+      .where(
+        sql`${table.walletNetwork} IS NOT NULL AND ${table.walletAddress} IS NOT NULL`
+      ),
+  ]
 );
 
 export const listings = sqliteTable(
@@ -179,6 +186,7 @@ export const deals = sqliteTable(
     submittedAt: text("submitted_at"),
     verifiedAt: text("verified_at"),
     completedAt: text("completed_at"),
+    completionCountedAt: text("completion_counted_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
@@ -319,6 +327,86 @@ export const walletChallenges = sqliteTable(
   (table) => [
     uniqueIndex("wallet_challenges_payload_idx").on(table.payload),
     index("wallet_challenges_user_idx").on(table.userId, table.createdAt),
+  ]
+);
+
+export const walletAuthChallenges = sqliteTable(
+  "wallet_auth_challenges",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    payload: text("payload").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    usedAt: text("used_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("wallet_auth_challenges_payload_idx").on(table.payload),
+    index("wallet_auth_challenges_user_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+    index("wallet_auth_challenges_expiry_idx").on(table.expiresAt),
+  ]
+);
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    authMethod: text("auth_method", { enum: ["wallet"] }).notNull(),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("auth_sessions_user_idx").on(table.userId, table.createdAt),
+    index("auth_sessions_expiry_idx").on(table.expiresAt),
+  ]
+);
+
+export const verificationAttestations = sqliteTable(
+  "verification_attestations",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind", {
+      enum: ["identity", "address", "business", "sanctions_screen"],
+    }).notNull(),
+    status: text("status", {
+      enum: [
+        "pending",
+        "verified",
+        "rejected",
+        "expired",
+        "revoked",
+        "needs_review",
+      ],
+    }).notNull(),
+    provider: text("provider").notNull(),
+    providerReferenceHash: text("provider_reference_hash").notNull(),
+    assuranceLevel: integer("assurance_level").notNull().default(1),
+    verifiedAt: text("verified_at"),
+    expiresAt: text("expires_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("verification_provider_reference_idx").on(
+      table.provider,
+      table.providerReferenceHash
+    ),
+    index("verification_user_status_idx").on(
+      table.userId,
+      table.status,
+      table.expiresAt
+    ),
   ]
 );
 

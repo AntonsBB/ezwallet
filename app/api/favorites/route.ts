@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { listingFavorites, listings } from "@/db/schema";
+import { listingFavorites, listings, users } from "@/db/schema";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
 import {
   enforceRateLimit,
@@ -42,10 +42,13 @@ export async function POST(request: Request) {
     const [listing] = await db
       .select({ id: listings.id })
       .from(listings)
+      .innerJoin(users, eq(listings.ownerId, users.id))
       .where(
         and(
           eq(listings.id, payload.listingId),
-          eq(listings.status, "active")
+          eq(listings.status, "active"),
+          eq(listings.moderationStatus, "approved"),
+          eq(users.moderationStatus, "active")
         )
       )
       .limit(1);

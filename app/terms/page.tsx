@@ -12,11 +12,12 @@ export default function TermsPage() {
       <section>
         <h2>What Easy Wallet provides</h2>
         <p>
-          Easy Wallet is a Telegram marketplace that helps people publish
-          listings, apply for work, create deal records, and prepare
-          non-custodial TON smart-contract escrows. Easy Wallet provides escrow
-          software but does not custody wallet keys or user funds and is not a
-          bank, exchange, employer, or tax adviser.
+          Easy Wallet is a wallet-first Web3 marketplace that helps people
+          publish listings, apply for work, create deal records, and prepare
+          non-custodial TON smart-contract escrows. Telegram is an optional
+          access and contact adapter. Easy Wallet provides escrow software but
+          does not custody wallet keys or user funds and is not a bank,
+          exchange, employer, or tax adviser.
         </p>
       </section>
       <section>
@@ -64,7 +65,7 @@ export default function TermsPage() {
         <p>
           Security issues should follow the private reporting process in the
           public repository. Other support requests can be sent through the
-          Easy Wallet bot.
+          Easy Wallet repository or optional bot.
         </p>
       </section>
     </main>

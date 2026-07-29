@@ -9,7 +9,6 @@ type EasyWalletEnv = Env & {
   MINI_APP_URL?: string;
   PLATFORM_FEE_ADDRESS?: string;
   ESCROW_ARBITRATOR_ADDRESS?: string;
-  ESCROW_ARBITRATOR_TELEGRAM_ID?: string;
   TON_NETWORK?: string;
   TONCENTER_API_KEY?: string;
   RECONCILE_SECRET?: string;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   calculateTransactionFees,
+  marketplaceAmountToNano,
   nanoToTon,
   tonToNano,
 } from "../lib/format.ts";
@@ -13,6 +14,12 @@ test("parses TON amounts without floating-point math", () => {
   assert.throws(() => tonToNano("1e9"));
   assert.throws(() => tonToNano("-1"));
   assert.throws(() => tonToNano("1.0000000001"));
+});
+
+test("enforces the marketplace minimum before fee construction", () => {
+  assert.equal(marketplaceAmountToNano("0.001"), "1000000");
+  assert.throws(() => marketplaceAmountToNano("0.000999999"));
+  assert.throws(() => marketplaceAmountToNano("not-a-number"));
 });
 
 test("charges each transaction party 1% with exact integer accounting", () => {

@@ -230,9 +230,9 @@ export function WorkMap({
       <div className="work-map-heading">
         <div>
           <span className="eyebrow">
-            <MapPin size={13} /> Approximate areas
+            <MapPin size={13} /> Live opportunities
           </span>
-          <h2 id="nearby-map-title">What is nearby?</h2>
+          <h2 id="nearby-map-title">Pick a nearby mission</h2>
         </div>
         <span className="mapped-count">
           {listings.length} {listings.length === 1 ? "area" : "areas"}
@@ -261,8 +261,8 @@ export function WorkMap({
         {!listings.length && mapStatus !== "loading" && (
           <div className="work-map-empty">
             <MapPin size={20} />
-            <strong>No approximate areas in this view</strong>
-            <span>Remote posts and posts without an area remain in List.</span>
+            <strong>No mapped missions yet</strong>
+            <span>Remote and area-free opportunities remain below.</span>
           </div>
         )}
       </div>

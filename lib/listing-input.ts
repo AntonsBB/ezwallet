@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tonToNano } from "./format";
+import { marketplaceAmountToNano } from "./format";
 import { normalizePublicCoordinates } from "./geo";
 import { marketCategoryOptions } from "./listing-categories";
 
@@ -82,12 +82,11 @@ export class ListingInputError extends Error {}
 export function prepareListingFields(payload: ListingInput) {
   let priceNano: string;
   try {
-    priceNano = tonToNano(payload.priceTon);
+    priceNano = marketplaceAmountToNano(payload.priceTon);
   } catch {
-    throw new ListingInputError("Choose a valid TON price.");
-  }
-  if (BigInt(priceNano) < 1_000_000n) {
-    throw new ListingInputError("The minimum listing price is 0.001 TON.");
+    throw new ListingInputError(
+      "Choose a valid TON price of at least 0.001 TON."
+    );
   }
 
   const publicLocation = normalizePublicCoordinates({

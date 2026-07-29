@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
 import {
   applications,
@@ -7,6 +7,7 @@ import {
   deals,
   ledgerEntries,
   listings,
+  users,
 } from "@/db/schema";
 import { buildEscrowFundingPayload } from "@/lib/ton-escrow";
 import {
@@ -324,6 +325,8 @@ async function reconcileActions(limit: number) {
       dealUpdate.status = "fulfilled";
       dealUpdate.escrowSettlementTxHash = txHash;
       dealUpdate.completedAt = confirmedAt;
+      dealUpdate.completionCountedAt =
+        sql`COALESCE(${deals.completionCountedAt}, ${confirmedAt})`;
     } else if (isRefund) {
       dealUpdate.escrowStatus = "refunded";
       dealUpdate.status = "cancelled";
@@ -346,6 +349,26 @@ async function reconcileActions(limit: number) {
             inArray(dealChainActions.status, ["prepared", "submitted"])
           )
         ),
+    ];
+    if (isRelease) {
+      const completionNotCounted = sql`EXISTS (
+        SELECT 1
+        FROM "deals"
+        WHERE "id" = ${deal.id}
+          AND "completion_counted_at" IS NULL
+      )`;
+      batch.push(
+        db
+          .update(users)
+          .set({ dealsCompleted: sql`${users.dealsCompleted} + 1` })
+          .where(and(eq(users.id, deal.buyerId), completionNotCounted)),
+        db
+          .update(users)
+          .set({ dealsCompleted: sql`${users.dealsCompleted} + 1` })
+          .where(and(eq(users.id, deal.sellerId), completionNotCounted))
+      );
+    }
+    batch.push(
       db.update(deals).set(dealUpdate).where(eq(deals.id, deal.id)),
       db
         .insert(dealEvents)
@@ -363,8 +386,8 @@ async function reconcileActions(limit: number) {
           }),
           createdAt: confirmedAt,
         })
-        .onConflictDoNothing(),
-    ];
+        .onConflictDoNothing()
+    );
     if (isRelease) {
       batch.push(
         db

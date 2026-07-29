@@ -17,27 +17,22 @@ test("keeps payments blocked until every operational role is configured", () => 
   assert.deepEqual(result.blockers, [
     "platform_wallet_missing",
     "arbitrator_wallet_missing",
-    "arbitrator_operator_missing",
   ]);
   assert.equal(
     paymentReadinessMessage(result.blockers, result.network),
-    "Payments are paused until the testnet platform fee wallet, arbitrator wallet and authorized arbitrator are configured."
+    "Payments are paused until the testnet platform fee wallet and arbitrator wallet are configured."
   );
 });
 
-test("rejects malformed wallet and Telegram operator bindings", () => {
+test("rejects malformed wallet bindings", () => {
   const result = inspectPaymentConfiguration({
     network: "testnet",
     platformFeeAddress: "not-a-ton-address",
     arbitratorAddress: arbitrator.toString(),
-    arbitratorTelegramId: "-123",
   });
 
   assert.equal(result.ready, false);
-  assert.deepEqual(result.blockers, [
-    "platform_wallet_invalid",
-    "arbitrator_operator_invalid",
-  ]);
+  assert.deepEqual(result.blockers, ["platform_wallet_invalid"]);
 });
 
 test("rejects one wallet reused for platform and arbitrator roles", () => {
@@ -45,7 +40,6 @@ test("rejects one wallet reused for platform and arbitrator roles", () => {
     network: "testnet",
     platformFeeAddress: platform.toString(),
     arbitratorAddress: platform.toRawString(),
-    arbitratorTelegramId: "123456789",
   });
 
   assert.equal(result.ready, false);
@@ -57,7 +51,6 @@ test("normalizes valid, distinct addresses for the configured network", () => {
     network: "testnet",
     platformFeeAddress: platform.toRawString(),
     arbitratorAddress: arbitrator.toRawString(),
-    arbitratorTelegramId: " 123456789 ",
   });
 
   assert.equal(result.ready, true);
@@ -72,7 +65,6 @@ test("normalizes valid, distinct addresses for the configured network", () => {
     normalizeTonAddress(arbitrator.toRawString(), "testnet")
   );
   assert.equal(Address.isFriendly(result.platformWalletAddress), true);
-  assert.equal(result.arbitratorTelegramId, "123456789");
 });
 
 test("uses a generic public message for malformed or conflicting roles", () => {

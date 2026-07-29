@@ -45,14 +45,27 @@ funds, external promotion, bot deletion, or unattended account changes.
 - [x] Verify TLS, security headers, manifest, webhook, cron, D1, and KV.
 - [ ] Perform and document a production rollback drill.
 
-## 3. Dedicated Telegram identity
+## 3. Wallet-first web identity and optional Telegram adapter
+
+- [x] Make the canonical HTTPS app usable outside Telegram.
+- [x] Add wallet-only profile creation, proof-backed sign-in, hashed revocable
+  browser sessions, origin checks, and sign-out.
+- [x] Add the PWA manifest, install metadata, and static-only offline asset
+  cache.
+- [x] Remove Telegram identity from payment-readiness and arbitrator
+  authorization.
+- [ ] Add a chain-neutral account-link table before implementing a second
+  signed wallet-identity adapter.
+- [ ] Implement any EVM, Solana, Bitcoin, XRP, token, or stablecoin rail only
+  with its own proof, settlement, reconciliation, dispute, and security review.
 
 - [x] Create a new Easy Wallet bot in BotFather after stable HTTPS is live.
 - [x] Store its token only in Cloudflare's encrypted secret store.
 - [x] Configure the menu Mini App, domain, description, commands, and
   secret-validated webhook.
 - [ ] Add the final reviewed bot avatar.
-- [x] Verify Telegram Web launch and signed-session flows.
+- [x] Keep Telegram as a launch-only adapter; protected actions require wallet
+  proof in every environment.
 - [ ] Verify Telegram iOS, Android, and Desktop launch flows.
 - [x] Send the stable Mini App link to Bamboo without modifying Bamboo itself.
 
@@ -66,8 +79,12 @@ funds, external promotion, bot deletion, or unattended account changes.
 - [x] Add owner-only pause, reactivate, and permanent-close listing controls.
 - [x] Replace unearned rating/response claims with review- and deal-backed
   reputation states.
-- [x] Add owner-only, conflict-safe listing editing and distinguish
-  Telegram-authenticated profiles from proof-verified TON wallets.
+- [x] Add owner-only, conflict-safe listing editing and proof-verified wallet
+  profiles.
+- [x] Add a private owner balance snapshot and a public storefront response
+  that never exposes a wallet address or balance.
+- [x] Add provider-neutral, expiring verification attestations and truthful
+  public trust-level projection without storing identity documents.
 - [x] Select and implement the approximate-area Work map direction.
 - [x] Add privacy-preserving approximate coordinates and uncertainty radii.
 - [x] Implement map/list synchronization, opt-in distance sorting, map failure
@@ -76,6 +93,10 @@ funds, external promotion, bot deletion, or unattended account changes.
   arbitrator decision history.
 - [ ] Complete empty, loading, offline, retry, error, and restricted-account
   states for every core journey.
+- [ ] Select and contract a regulated identity-verification provider after
+  legal classification, then implement hosted capture and signed webhooks.
+- [ ] Complete counsel review of MiCA, AML, Travel Rule, privacy, marketplace,
+  escrow, arbitration, and fee obligations before mainnet.
 
 ## 5. Release verification
 

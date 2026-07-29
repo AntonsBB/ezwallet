@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
 import { listings, users } from "@/db/schema";
 import { inspectPaymentConfiguration } from "@/lib/payment-configuration";
@@ -38,7 +38,13 @@ export async function GET() {
       })
       .from(listings)
       .innerJoin(users, eq(listings.ownerId, users.id))
-      .where(eq(listings.status, "active"))
+      .where(
+        and(
+          eq(listings.status, "active"),
+          eq(listings.moderationStatus, "approved"),
+          eq(users.moderationStatus, "active")
+        )
+      )
       .orderBy(desc(listings.createdAt));
 
     const network =
@@ -47,7 +53,6 @@ export async function GET() {
       network,
       platformFeeAddress: getBinding("PLATFORM_FEE_ADDRESS"),
       arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
-      arbitratorTelegramId: getBinding("ESCROW_ARBITRATOR_TELEGRAM_ID"),
     });
 
     const publicListings = rows.map(
@@ -64,7 +69,6 @@ export async function GET() {
         network,
         paymentsReady: paymentConfiguration.ready,
         paymentBlockers: paymentConfiguration.blockers,
-        telegramReady: Boolean(getBinding("TELEGRAM_BOT_TOKEN")),
       },
     });
   } catch (error) {

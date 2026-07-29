@@ -22,6 +22,12 @@ export async function POST(request: Request) {
   try {
     const user = await authenticateRequest(request);
     await enforceRateLimit("listing-create", user.id, 20, 86400);
+    if (user.moderationStatus !== "active") {
+      return noStoreJson(
+        { error: "This profile cannot publish listings right now." },
+        { status: 403 }
+      );
+    }
     const contentLength = Number(request.headers.get("content-length") ?? "0");
     if (contentLength > 16_384) {
       return noStoreJson(

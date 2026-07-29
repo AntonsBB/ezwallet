@@ -1,11 +1,15 @@
 # Easy Wallet product specification
 
-Easy Wallet is a Telegram Mini App for local and remote peer-to-peer trade. It combines:
+Easy Wallet is an installable, wallet-first Web3 app for local and remote
+peer-to-peer trade. Telegram can launch the same web app, but is not required.
+It combines:
 
 - Market: physical and digital goods.
 - Work: services, micro-jobs, on-site jobs, remote work, and project hiring.
-- Wallet: a non-custodial TON Connect interface for user-approved payments.
-- Profile: Telegram identity, wallet verification, reputation, reviews, listings, deals, and safety controls.
+- Wallet: non-custodial wallet connection, ownership proof, and user-approved
+  settlement actions. TON is the first implemented settlement rail.
+- Profile: wallet identity, reputation, reviews,
+  listings, deals, and safety controls.
 
 The wallet supports the marketplace. Easy Wallet never receives seed phrases, stores private keys, or presents an internal balance as if it were on-chain money.
 
@@ -13,7 +17,10 @@ The wallet supports the marketplace. Easy Wallet never receives seed phrases, st
 
 1. Ordinary people should be able to buy, sell, work, and hire without learning financial or business jargon.
 2. Each important action should be visible, reversible until commitment, and confirmed in plain language.
-3. Identity collection is minimized. Telegram authentication identifies the account; TON proof binds a wallet; government-document verification is not implemented without a qualified provider and a separate legal/security review.
+3. Identity collection is minimized. Wallet ownership proof identifies the
+   account. Telegram can launch the PWA but cannot authenticate it.
+   Government-document verification is not implemented without a qualified
+   provider and a separate legal/security review.
 4. Every paid deal charges 1% to the buyer and 1% to the seller, disclosed only
    in the transaction review and wallet-approval flow.
 5. A browser response never proves payment. Payment records remain pending until
@@ -34,27 +41,30 @@ The source of truth is the original EzWallet demo:
 - phone-first density and four persistent bottom tabs;
 - product photography inside clean cards rather than decorative illustration overload.
 
-The production interface keeps the source identity while removing the old presentation-video phone mockup. Telegram provides the device shell.
+The production interface keeps the source identity while removing the old
+presentation-video phone mockup. The responsive web app provides its own device
+shell and can be installed from supported browsers.
 
 ## Core journeys
 
 ### Browse and buy
 
-1. Open the Mini App from the Telegram bot.
-2. Telegram init data is validated by the backend.
-3. Browse active Market listings by normalized category, listing type, exact
+1. Open the HTTPS web app in a desktop browser, mobile browser, or compatible
+   wallet browser. Telegram is an optional alternate launch path.
+2. Browse active Market listings by normalized category, listing type, exact
    TON price range, or price/newest order. Empty results never fabricate stock
    and always offer a clear or create action.
-4. Open a listing and inspect seller reputation, delivery, price, safety notes,
-   Telegram-authenticated status, and separate TON wallet-proof readiness.
-5. Connect and verify a TON wallet.
-6. Review an immutable quote showing the base price, 1% buyer fee, 1% seller fee, buyer total, seller proceeds, recipients, and network.
-7. Approve one transaction that atomically deploys and funds the deal's
+3. Open a listing and inspect seller reputation, delivery, price, safety notes,
+   and proof-verified settlement-wallet readiness.
+4. Connect and verify a compatible TON wallet through an extension, QR,
+   universal link, or in-wallet browser.
+5. Review an immutable quote showing the base price, 1% buyer fee, 1% seller fee, buyer total, seller proceeds, recipients, and network.
+6. Approve one transaction that atomically deploys and funds the deal's
    deterministic escrow contract.
-8. Easy Wallet records the signed submission as pending.
-9. The payment monitor confirms the expected contract code, immutable terms,
+7. Easy Wallet records the signed submission as pending.
+8. The payment monitor confirms the expected contract code, immutable terms,
    sender, amount, and funding payload on-chain.
-10. Seller marks delivery on-chain. Buyer confirms release or opens a dispute,
+9. Seller marks delivery on-chain. Buyer confirms release or opens a dispute,
     and both parties may review after verified settlement.
 
 ### Find work
@@ -80,9 +90,16 @@ coordinates are not published in a listing.
 ### Wallet
 
 1. Connect a compatible TON wallet through TON Connect.
-2. Complete a server-issued `ton_proof` challenge before the address is saved to the profile.
-3. View the verified address, network, recent Easy Wallet deals, and on-chain balance when the configured provider is available.
+2. Complete a server-issued, single-use `ton_proof` challenge for the exact app
+   domain before a wallet-only profile and browser session are created.
+3. View the verified address, network, and recent Easy Wallet deals.
 4. Every transfer is approved in the wallet. Easy Wallet cannot sign on the user's behalf.
+
+The product architecture keeps identity, marketplace profiles, and payment
+rails separate. Additional chain adapters must implement their own signed
+authentication, transaction construction, independent reconciliation, escrow
+or dispute design, and security review. The UI and documentation must not imply
+native ETH, BTC, SOL, XRP, token, or stablecoin support before those rails exist.
 
 ## Deal and fee rules
 
@@ -135,7 +152,8 @@ transaction; this avoids stranding funds after a lost browser callback.
 
 ## Launch acceptance criteria
 
-- Telegram init data validation rejects tampering, expired launches, and malformed users.
+- Wallet-only browser sign-in works from every launch surface; Telegram launch
+  data is never accepted as application authentication.
 - Wallet addresses cannot be attached without a valid one-time TON proof.
 - Market and Work discovery, create/edit/pause flows, applications, deals, completion, reviews, and reports work against persistent storage.
 - Every payable deal displays and records the fixed 1% fee for each party only

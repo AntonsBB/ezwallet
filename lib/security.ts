@@ -26,7 +26,7 @@ export async function constantTimeTextEqual(left: string, right: string) {
 
 export async function enforceRateLimit(
   scope: string,
-  userId: number,
+  subject: number | string,
   limit: number,
   windowSeconds: number
 ) {
@@ -34,7 +34,7 @@ export async function enforceRateLimit(
   const now = new Date();
   const nowIso = now.toISOString();
   const resetAt = new Date(now.getTime() + windowSeconds * 1000).toISOString();
-  const key = `${scope}:${userId}`;
+  const key = `${scope}:${subject}`;
   const [current] = await db
     .insert(rateLimits)
     .values({ key, count: 1, resetAt })

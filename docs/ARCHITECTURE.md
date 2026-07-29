@@ -2,65 +2,84 @@
 
 ## Runtime
 
-- Telegram Mini App frontend: React, TypeScript, and a responsive app shell.
-- Edge API and Telegram webhook: Cloudflare Worker.
+- Installable Web3 PWA: React, TypeScript, a responsive app shell, and a
+  static-assets-only service-worker cache.
+- Edge API and optional Telegram webhook: Cloudflare Worker.
 - Relational data: Cloudflare D1 with tracked SQL migrations.
 - Listing media: Cloudflare Workers KV with size/type validation, immutable
   values, and unguessable object keys.
 - Local discovery: client-side Leaflet map with attributed OpenStreetMap tiles,
   rounded listing areas, and a complete list fallback.
-- Wallet integration: TON Connect in the browser plus server-side TON proof verification.
+- Wallet integration: TON Connect across browser extensions, QR/universal
+  links, mobile wallet browsers, and the optional Telegram environment, plus
+  server-side TON proof verification.
 - Escrow: one deterministic native-TON contract per deal, compiled from
   Acton/Tolk and deployed atomically with buyer funding.
 - Payment monitoring: a scheduled Worker queries TON Center and confirms the
   pinned contract code, state, action messages, payouts, and destruction.
 
-The frontend and API share one origin. This keeps cookies, CSRF/origin checks, the TON manifest, and Telegram launch configuration simple.
+The frontend and API share one origin. This keeps host-only cookies,
+CSRF/origin checks, and the TON manifest simple.
 
 ## Trust boundaries
 
 ```text
-Telegram client
-  └─ signed initData ──> Worker authentication
-
 User wallet
-  ├─ TON Connect session ──> browser
-  ├─ ton_proof ──> Worker verification
-  └─ signed escrow transaction BoC ──> TON network
+  |-- TON Connect session --> browser
+  |-- single-use ton_proof --> Worker authentication
+  `-- signed escrow transaction BoC --> TON network
+
+Optional Telegram client
+  `-- launch link --> the same wallet-authenticated PWA
 
 Deal escrow
-  ├─ immutable participants, amounts, deadlines, and fees
-  ├─ delivery/dispute/release/refund messages
-  └─ fixed terminal payouts ──> buyer, seller, and platform
+  |-- immutable participants, amounts, deadlines, and fees
+  |-- delivery/dispute/release/refund messages
+  `-- fixed terminal payouts --> buyer, seller, and platform
 
 Worker
-  ├─ prepared statements ──> D1
-  ├─ validated media ──> Workers KV
-  ├─ Bot API calls ──> Telegram
-  └─ payment observation ──> TON provider
+  |-- prepared statements --> D1
+  |-- validated media --> Workers KV
+  |-- optional Bot API calls --> Telegram
+  `-- payment observation --> TON provider
 ```
 
-Untrusted inputs include Telegram request bodies, Mini App init data before validation, wallet responses, uploaded files, all form data, URL parameters, Telegram bot updates, and TON provider responses.
+Untrusted inputs include wallet responses, cookies, uploaded files, all form
+data, URL parameters, Telegram request bodies and init data before validation,
+bot updates, and TON provider responses.
 
 ## Authentication
 
-1. The frontend posts raw `Telegram.WebApp.initData`.
-2. The Worker verifies the official HMAC data-check string and a short `auth_date` window.
-3. The Worker upserts the Telegram profile.
-4. Every authenticated API request carries the signed launch data in a custom
-   header and is revalidated server-side.
-5. The one-hour freshness window limits replay and requires users to relaunch
-   the Mini App when their Telegram launch proof expires.
+1. The backend creates a cryptographically random, short-lived, single-use TON
+   proof challenge. It may be anonymous or bound to an existing account.
+2. The wallet signs the challenge for the exact Easy Wallet domain.
+3. The Worker verifies the nonce, timestamp, domain, network,
+   address/state-init relationship, public key, and Ed25519 signature.
+4. The proof is claimed with a compare-and-set update so a replay cannot create
+   a second session.
+5. The verified wallet resolves to one unique profile, or creates a new
+   wallet-only profile.
+6. The browser receives a seven-day `HttpOnly`, `SameSite=Lax`,
+   production `__Host-` session cookie. D1 stores only its SHA-256 hash.
+7. State-changing cookie-authenticated requests require the exact application
+   origin. Sign-out revokes the server row and expires both cookie variants.
 
-There is no localhost bypass, demo user, password, bearer token, or long-lived
-application session.
+Telegram is a launch adapter only. It does not create an application session or
+authorize API actions. The Telegram script is loaded only for actual Telegram
+launch URLs so native presentation and haptics remain available; the user must
+still prove wallet control to create or enter an account.
+
+There is no localhost bypass, demo user, password, plaintext bearer-token
+storage, or seeded production identity.
 
 ## Wallet binding
 
-1. The backend issues a random, single-use TON proof nonce tied to the authenticated session.
+1. The backend issues a random, single-use TON proof nonce, optionally tied to
+   an existing authenticated session.
 2. TON Connect asks the wallet to sign the proof for the current app domain.
 3. The Worker checks the nonce, timestamp, exact domain, address/state-init relationship, and Ed25519 signature.
-4. The nonce is consumed and the verified address/network is stored.
+4. The nonce is atomically consumed and the verified address/network becomes a
+   unique account identity and the current TON settlement wallet.
 
 Wallet responses are never treated as identity proof without this verification.
 
@@ -84,10 +103,11 @@ accepted when fixed payouts and contract destruction are observed.
 
 The public payment-readiness gate uses the same configuration validator as both
 deal-creation paths. It requires valid, distinct platform and arbitrator wallet
-roles plus a valid authorized arbitrator Telegram ID. Missing, malformed, or
-reused roles keep checkout disabled and return only non-sensitive blocker
-codes. Buyer and seller addresses are then normalized and all four escrow roles
-are checked for uniqueness again while deriving the individual contract.
+roles. Missing, malformed, or reused roles keep checkout disabled and return
+only non-sensitive blocker codes. An arbitrator can prepare a resolution only
+while authenticated by a proof-verified wallet matching the address frozen
+into the disputed deal. Buyer and seller addresses are normalized and all four
+escrow roles are checked for uniqueness again while deriving the contract.
 
 Funding and action reconciliation also scans server-prepared records, so a lost
 browser callback does not strand a successful transaction. Stale records expire
@@ -101,8 +121,8 @@ provider query that finds no matching finalized message.
 - SQL values use prepared statements.
 - Unique and partial indexes prevent duplicate active deals, duplicate
   applications, duplicate reviews, duplicate per-user saved listings, replayed
-  payment references, and replayed proof nonces.
-- Saved listing rows are scoped to the authenticated Telegram user on every
+  payment references, duplicate wallet identities, and replayed proof nonces.
+- Saved listing rows are scoped to the authenticated wallet profile on every
   read and mutation; the browser cannot choose a different profile.
 - Listing lifecycle mutations are owner-scoped, follow an explicit transition
   matrix, use a compare-and-set update to reject concurrent changes, and never
@@ -129,18 +149,32 @@ provider query that finds no matching finalized message.
 
 Required Worker secrets:
 
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_WEBHOOK_SECRET`
 - `RECONCILE_SECRET`
 - `TONCENTER_API_KEY` when provider rate limits require one
+
+Optional adapter secrets:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_WEBHOOK_SECRET`
 
 Required non-secret configuration:
 
 - production app origin
 - platform TON address
-- arbitrator TON address and authorized Telegram operator ID
+- arbitrator TON address controlled by a distinct, independently reviewed party
 - TON network (`mainnet` for launch; testnet during verification)
-- Telegram bot username
-- init-data and proof freshness windows
+- optional Telegram bot username
+- proof and optional init-data freshness windows
 
 No seed phrase, private key, or custodial signing key belongs in this project.
+
+## Chain adapter boundary
+
+Marketplace profiles and browser sessions are intentionally separate from
+settlement. TON is the first implemented identity and escrow adapter, not a
+claim of universal chain support. A future EVM, Solana, Bitcoin, XRP, token, or
+stablecoin adapter must provide chain-specific ownership proof, canonical
+account identifiers, transaction construction, finalized-state reconciliation,
+fee accounting, dispute semantics, adversarial tests, and an independent
+security review. A wallet logo or WalletConnect session alone is not a payment
+rail.

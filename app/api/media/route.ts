@@ -1,5 +1,6 @@
 import { getMediaStore } from "@/db";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
+import { inspectImageUpload } from "@/lib/image-upload";
 import {
   enforceRateLimit,
   noStoreJson,
@@ -36,8 +37,15 @@ export async function POST(request: Request) {
         { status: 415 }
       );
     }
+    const image = await file.arrayBuffer();
+    if (!inspectImageUpload(image, file.type)) {
+      return noStoreJson(
+        { error: "The image content or dimensions are not supported." },
+        { status: 415 }
+      );
+    }
     const key = `listing-media/${user.id}/${crypto.randomUUID()}.${extension}`;
-    await getMediaStore().put(key, await file.arrayBuffer(), {
+    await getMediaStore().put(key, image, {
       metadata: {
         contentType: file.type,
         ownerId: String(user.id),

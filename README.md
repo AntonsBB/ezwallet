@@ -1,13 +1,18 @@
 # Easy Wallet
 
-Easy Wallet is a production-oriented Telegram Mini App for buying and selling
-physical or digital goods, offering services, posting jobs, hiring people, and
-paying directly with TON.
+Easy Wallet is a production-oriented, wallet-first Web3 marketplace for buying
+and selling physical or digital goods, offering services, posting jobs, and
+hiring people. It runs as an installable web app at
+`https://easywallet.rexai.world`; Telegram is an optional launch and contact
+adapter and never acts as the account system.
 
 It is intentionally non-custodial:
 
-- Telegram Mini App launch data is verified on the server.
-- Wallet ownership is bound to the Telegram profile with `ton_proof`.
+- A server-issued `ton_proof` establishes wallet ownership and the primary
+  marketplace account.
+- Browser sessions use random opaque credentials; D1 stores only their hashes.
+- Telegram may open the same PWA, but every account and protected action still
+  requires wallet proof and the HttpOnly wallet session.
 - Private keys and seed phrases never enter Easy Wallet.
 - Every paid deal discloses an immutable 1% buyer fee and 1% seller fee only at
   checkout.
@@ -27,24 +32,28 @@ The product and trust-boundary specifications live in
 remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md). The exact
 external payment gates are documented in
 [`docs/TESTNET-DRILL.md`](docs/TESTNET-DRILL.md) and
-[`docs/CONTRACT-REVIEW-HANDOFF.md`](docs/CONTRACT-REVIEW-HANDOFF.md).
+[`docs/CONTRACT-REVIEW-HANDOFF.md`](docs/CONTRACT-REVIEW-HANDOFF.md). Identity,
+KYC, AML, and licensing gates are documented in
+[`docs/COMPLIANCE-READINESS.md`](docs/COMPLIANCE-READINESS.md).
 
 ## Product surface
 
 - **Market:** physical and digital listings, normalized categories, exact TON
   price ranges, type and price sorting, authenticated saved listings,
   owner-only conflict-safe editing and lifecycle controls, listing creation,
-  truthful Telegram/wallet seller signals, direct purchase, and reports.
+  truthful wallet and reputation signals, direct purchase, and reports.
 - **Work:** privacy-safe approximate-area map, opt-in nearby sorting, list
   fallback, authenticated favorites, services, jobs, applications, job-owner
   decisions, and hiring.
-- **Wallet:** TON Connect, proof verification, transparent fee breakdown,
+- **Wallet:** browser-extension, QR, deep-link, and in-wallet-browser access
+  through TON Connect; proof verification, transparent fee breakdown,
   per-deal escrow, delivery/completion/dispute actions, reviews.
-- **Profile:** Telegram identity, review-backed reputation without unearned
-  scores, editable details, listing management, wallet status, and safety
-  resources.
-- **Bot:** `/start` response with a Web App launch button and secret-validated
-  webhook.
+- **Profile:** a private owner dashboard and public storefront, owner-only
+  on-chain balance snapshot, proof-backed verification levels, review-backed
+  reputation without unearned scores, editable details, listing management,
+  and safety.
+- **Optional bot:** `/start` response with a Web App launch button and
+  secret-validated webhook.
 
 Government ID/NFC, custodial balances, fiat exchange, tax-avoidance features,
 and civic voting are deliberately outside this release.
@@ -52,10 +61,11 @@ and civic voting are deliberately outside this release.
 ## Stack
 
 - React 19, Next 16 App Router, Vinext, TypeScript
+- Installable responsive PWA with a deliberately static-only service-worker cache
 - Cloudflare Workers and Static Assets
 - Cloudflare D1 with Drizzle
 - Cloudflare Workers KV
-- Telegram Mini Apps and Bot API
+- Optional Telegram Mini Apps and Bot API adapter
 - Leaflet with attributed OpenStreetMap tiles
 - TON Connect UI, TON proof, TON Center v2/v3
 - Acton/Tolk native-TON escrow contract
@@ -72,8 +82,8 @@ npm run dev
 ```
 
 Open the printed local URL to review the public product surface. Authenticated
-actions require genuine, server-verified Telegram Mini App launch data; there
-is no demo identity or seeded marketplace data.
+actions require genuine wallet proof; there is no demo identity or seeded
+marketplace data.
 
 Useful commands:
 
@@ -117,11 +127,10 @@ Set these runtime bindings before enabling payments:
 | `TON_NETWORK=testnet` | yes at first | use `mainnet` only after testnet sign-off |
 | `PLATFORM_FEE_ADDRESS` | yes | receives the exact 1% fee from each party after settlement |
 | `ESCROW_ARBITRATOR_ADDRESS` | yes | wallet allowed to resolve a disputed on-chain escrow |
-| `ESCROW_ARBITRATOR_TELEGRAM_ID` | yes | Telegram operator allowed to prepare dispute resolutions |
 | `MINI_APP_URL` | yes | canonical HTTPS deployment URL |
-| `TELEGRAM_BOT_TOKEN` | yes, secret | validates Mini App sessions and runs the bot |
-| `TELEGRAM_BOT_USERNAME` | yes | builds the wallet return link to the dedicated bot |
-| `TELEGRAM_WEBHOOK_SECRET` | yes, secret | authenticates Telegram webhook requests |
+| `TELEGRAM_BOT_TOKEN` | optional, secret | validates optional Mini App sessions and runs the bot |
+| `TELEGRAM_BOT_USERNAME` | optional | identifies the optional launch bot |
+| `TELEGRAM_WEBHOOK_SECRET` | optional, secret | authenticates optional Telegram webhook requests |
 | `RECONCILE_SECRET` | yes, secret | protects manual reconciliation fallback |
 | `TONCENTER_API_KEY` | recommended, secret | raises TON Center limits |
 | `NEXT_PUBLIC_MAP_TILE_URL` | optional | changes the attributed interactive map tile provider without a code edit |
@@ -131,12 +140,12 @@ and arbitrator addresses are reviewed out-of-band, the escrow contract has an
 independent security review, the reconciler has passed testnet failure/replay
 tests, and operational moderation is staffed.
 
-`paymentsReady` is fail-closed: the platform wallet, arbitrator wallet, and
-authorized arbitrator Telegram ID must all be present and syntactically valid,
-and the two configured wallet roles must be distinct. The public bootstrap API
-returns only safe blocker codes, never configured addresses or operator IDs.
+`paymentsReady` is fail-closed: the platform and arbitrator wallets must both
+be present, valid, and distinct. Arbitration requests are available only to a
+proof-verified wallet matching the arbitrator frozen into that deal. The public
+bootstrap API returns only safe blocker codes, never configured addresses.
 
-## Telegram setup
+## Optional Telegram adapter
 
 1. Create or choose a bot in BotFather.
 2. Configure the deployed HTTPS URL as the bot menu Web App.
@@ -152,7 +161,9 @@ set MINI_APP_URL=https://YOUR_DOMAIN
 npm run telegram:configure
 ```
 
-The helper never prints the bot token or webhook secret.
+The helper never prints the bot token or webhook secret. The main web app,
+wallet sign-in, marketplace profiles, and saved activity do not depend on this
+adapter.
 
 ## Payment state machine
 

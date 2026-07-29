@@ -12,22 +12,26 @@ export default function PrivacyPage() {
       <section>
         <h2>Data we process</h2>
         <p>
-          Telegram supplies your numeric account ID and may supply your name,
-          username, language, and profile photo when you open the Mini App. We
-          store the profile fields you choose, listings, applications, deal
-          events, saved listing references, reviews, reports, wallet public
-          addresses, and payment references required to run the marketplace. If
-          you explicitly attach a map area, coordinates are rounded before they
-          enter application state and are stored with an uncertainty radius; the
-          exact device position is discarded.
+          A signed wallet proof supplies a public address and network used to
+          create or access your marketplace profile. If you use the optional
+          Telegram launch path, Telegram may also supply a numeric account ID,
+          name, username, language, and profile photo. We store the profile
+          fields you choose, listings, applications, deal events, saved listing
+          references, reviews, reports, wallet public addresses, and payment
+          references required to run the marketplace. If you explicitly attach
+          a map area, coordinates are rounded before they enter application
+          state and are stored with an uncertainty radius; the exact device
+          position is discarded.
         </p>
       </section>
       <section>
         <h2>Data we never request</h2>
         <p>
-          Easy Wallet never needs or stores wallet seed phrases, private keys, PINs,
-          or Telegram passwords. TON proof verifies control of a public wallet
-          address without disclosing its private key.
+          Easy Wallet never needs or stores wallet seed phrases, private keys,
+          PINs, or Telegram passwords. TON proof verifies control of a public
+          wallet address without disclosing its private key. Browser session
+          tokens are random, stored in an HttpOnly cookie, and only a hash is
+          retained by the server.
         </p>
       </section>
       <section>
@@ -41,13 +45,14 @@ export default function PrivacyPage() {
       <section>
         <h2>Service providers and retention</h2>
         <p>
-          The application uses Telegram, the TON network and TON data providers,
+          The application uses the TON network and TON data providers,
           Cloudflare infrastructure, OpenStreetMap map tiles, and GitHub for
-          source distribution. When you view the map, the tile service receives
-          ordinary network request data such as your IP address and this
-          application&apos;s origin. We retain marketplace and ledger records
-          while needed for safety, disputes, accounting, and legal compliance;
-          short-lived wallet challenges expire within minutes.
+          source distribution. Telegram is contacted only when you use the
+          optional adapter or its contact links. When you view the map, the tile
+          service receives ordinary network request data such as your IP address
+          and this application&apos;s origin. We retain marketplace and ledger
+          records while needed for safety, disputes, accounting, and legal
+          compliance; short-lived wallet challenges expire within minutes.
         </p>
       </section>
       <section>

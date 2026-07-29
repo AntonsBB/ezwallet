@@ -55,8 +55,10 @@ export async function POST(
         listingOwnerId: listings.ownerId,
         listingStatus: listings.status,
         listingType: listings.type,
+        listingModerationStatus: listings.moderationStatus,
         applicantId: applications.applicantId,
         offerNano: applications.offerNano,
+        applicantModerationStatus: users.moderationStatus,
         sellerWalletAddress: users.walletAddress,
         sellerWalletNetwork: users.walletNetwork,
         sellerWalletVerifiedAt: users.walletVerifiedAt,
@@ -71,9 +73,17 @@ export async function POST(
       application.listingOwnerId !== buyer.id ||
       application.listingType !== "job" ||
       application.listingStatus !== "active" ||
+      application.listingModerationStatus !== "approved" ||
+      application.applicantModerationStatus !== "active" ||
       application.status !== "sent"
     ) {
       return noStoreJson({ error: "Application not found." }, { status: 404 });
+    }
+    if (buyer.moderationStatus !== "active") {
+      return noStoreJson(
+        { error: "This profile cannot hire right now." },
+        { status: 403 }
+      );
     }
     if (!buyer.walletAddress || !buyer.walletVerifiedAt || !buyer.walletNetwork) {
       return noStoreJson(
@@ -108,7 +118,6 @@ export async function POST(
       network,
       platformFeeAddress: getBinding("PLATFORM_FEE_ADDRESS"),
       arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
-      arbitratorTelegramId: getBinding("ESCROW_ARBITRATOR_TELEGRAM_ID"),
     });
     if (!paymentConfiguration.ready) {
       return noStoreJson(

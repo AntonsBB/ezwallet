@@ -1,29 +1,35 @@
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
+import { PwaRegistration } from "./PwaRegistration";
 
 export const metadata: Metadata = {
-  title: "Easy Wallet — Buy, sell and work with TON",
+  title: "Easy Wallet — A wallet-first Web3 marketplace",
   description:
-    "A Telegram marketplace for goods, services and work, powered by non-custodial TON payments.",
+    "Buy, sell and find local work from the browser with a wallet you control.",
   applicationName: "Easy Wallet",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/brand/icon-180.png",
     apple: "/brand/icon-180.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Easy Wallet",
+    statusBarStyle: "default",
   },
   openGraph: {
     type: "website",
     title: "Easy Wallet — Buy. Sell. Work.",
     description:
-      "A people-powered Telegram marketplace with non-custodial TON payments.",
+      "A wallet-first marketplace for goods, services and local work.",
     images: [{ url: "/og.png", width: 1200, height: 630, alt: "Easy Wallet" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Easy Wallet — Buy. Sell. Work.",
     description:
-      "A people-powered Telegram marketplace with non-custodial TON payments.",
+      "A wallet-first marketplace for goods, services and local work.",
     images: ["/og.png"],
   },
 };
@@ -43,13 +49,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <Script
-          src="https://telegram.org/js/telegram-web-app.js"
-          strategy="beforeInteractive"
-        />
-      </head>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <PwaRegistration />
+      </body>
     </html>
   );
 }

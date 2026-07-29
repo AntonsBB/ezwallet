@@ -1,9 +1,10 @@
 # Funded TON testnet drill
 
-This runbook is the payment release gate for Easy Wallet. It uses genuine
-Telegram identities, genuine TON testnet wallets, and finalized testnet
-transactions. It must not be replaced with seeded rows, mocked provider
-responses, screenshots without transaction evidence, or a mainnet transaction.
+This runbook is the payment release gate for Easy Wallet. It uses genuine,
+proof-verified TON testnet wallets, wallet-backed marketplace profiles, and
+finalized testnet transactions. It must not be replaced with seeded rows,
+mocked provider responses, screenshots without transaction evidence, or a
+mainnet transaction.
 
 ## Required participants and inputs
 
@@ -12,16 +13,13 @@ Before enabling the payment gate, the owner supplies:
 1. a platform-fee TON wallet address whose controller has been verified
    out-of-band;
 2. a separate arbitrator TON wallet address;
-3. the Telegram numeric user ID of the person controlling that arbitrator
-   wallet; and
-4. a buyer and seller who each control a separate Telegram account and a
-   separate TON testnet wallet.
+3. a buyer and seller who each control a separate TON testnet wallet.
 
 Buyer, seller, arbitrator, and platform wallets must be four distinct TON
-accounts. The arbitrator must open Easy Wallet from the configured Telegram
-account and complete TON proof with the configured arbitrator wallet. Never
-send a seed phrase, private key, wallet backup, bot token, or Cloudflare secret
-to the project, another participant, a reviewer, or a chat.
+accounts controlled by four independent roles. The arbitrator must sign in to
+Easy Wallet with TON proof from the configured arbitrator wallet. Never send a
+seed phrase, private key, wallet backup, bot token, or Cloudflare secret to the
+project, another participant, a reviewer, or a chat.
 
 ## Preconditions
 
@@ -29,9 +27,8 @@ to the project, another participant, a reviewer, or a chat.
 - Confirm `TON_NETWORK=testnet` in the deployed Worker.
 - Have two people compare the platform and arbitrator addresses through a
   second channel before configuring them.
-- Store `PLATFORM_FEE_ADDRESS`, `ESCROW_ARBITRATOR_ADDRESS`, and
-  `ESCROW_ARBITRATOR_TELEGRAM_ID` as Cloudflare bindings. Do not commit their
-  values.
+- Store `PLATFORM_FEE_ADDRESS` and `ESCROW_ARBITRATOR_ADDRESS` as Cloudflare
+  bindings. Do not commit their values.
 - Fetch `/api/bootstrap` and confirm `paymentsReady` is `true`,
   `paymentBlockers` is empty, and `network` is `testnet`.
 - Confirm buyer, seller, and arbitrator each see “Address verified with TON
@@ -48,8 +45,8 @@ confirmation.
 
 ## Drill A: buyer-confirmed settlement
 
-1. The seller creates one truthful, clearly test-labeled listing using the
-   seller's real Telegram account. Record the listing ID.
+1. The seller signs in with their real testnet wallet and creates one truthful,
+   clearly test-labeled listing. Record the listing ID.
 2. The buyer opens that listing and reviews the exact base price, 1% buyer fee,
    1% seller fee, escrow reserve, and total wallet request.
 3. Before signing, verify the TON Connect request contains one message to the
@@ -78,8 +75,7 @@ the settled contract.
    verified funding.
 2. The seller marks delivery, then the buyer opens a dispute with truthful test
    evidence. Record both finalized action transactions.
-3. From the configured arbitrator Telegram account, connect and prove the
-   configured arbitrator wallet.
+3. Sign in with and prove the configured arbitrator wallet.
 4. Review the immutable buyer, seller, amounts, evidence, and requested
    resolution before signing. The arbitrator may only choose the contract's
    fixed seller-release or buyer-refund path.
@@ -99,10 +95,10 @@ Run these without inventing a successful result:
   unique and the state transition is idempotent.
 - Temporarily make the TON provider unavailable in an isolated test
   environment. Confirm the deal remains pending and is not treated as unfunded.
-- Attempt each action from the wrong verified wallet and from the wrong
-  Telegram account. Confirm it fails without preparing a wallet request.
+- Attempt each action from the wrong verified wallet and a session belonging
+  to another profile. Confirm it fails without preparing a wallet request.
 - Confirm a reused platform/arbitrator wallet, malformed address, or missing
-  arbitrator operator makes `paymentsReady=false`.
+  arbitrator wallet makes `paymentsReady=false`.
 - Confirm an unexpected contract hash, source, amount, body, payout set, bounced
   message, or emulated transaction never advances the authoritative state.
 
@@ -111,12 +107,13 @@ Run these without inventing a successful result:
 For every step, retain the timestamp, participant role, deal ID, escrow
 address, transaction hash, block/sequence reference, expected and observed
 amounts, code/data hashes, API state, and D1 event/action/ledger references.
-Keep Telegram launch data, tokens, secrets, and private keys out of the record.
+Keep session cookies, optional Telegram launch data, tokens, secrets, and
+private keys out of the record.
 
 Stop the drill and keep payments disabled if:
 
 - any transaction is on mainnet;
-- a wallet or Telegram identity does not match the reviewed role;
+- a wallet identity does not match the reviewed role;
 - the wallet request contains an unexpected recipient, message, or amount;
 - the provider cannot independently verify a finalized message;
 - a state advances before its on-chain evidence is verified;

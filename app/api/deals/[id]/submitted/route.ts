@@ -2,7 +2,11 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { dealEvents, deals, ledgerEntries } from "@/db/schema";
-import { authenticateRequest, authErrorResponse } from "@/lib/auth";
+import {
+  authenticateRequest,
+  AuthenticationError,
+  authErrorResponse,
+} from "@/lib/auth";
 import {
   enforceRateLimit,
   RateLimitError,
@@ -140,11 +144,7 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return Response.json({ error: "Wallet result is invalid." }, { status: 400 });
     }
-    if (
-      error instanceof Error &&
-      (error.message.includes("Telegram") ||
-        error.message.includes("preview user"))
-    ) {
+    if (error instanceof AuthenticationError) {
       return authErrorResponse(error);
     }
     return Response.json(

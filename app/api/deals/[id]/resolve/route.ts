@@ -1,7 +1,7 @@
 import { Address } from "@ton/core";
 import { and, eq, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { getBinding, getDb } from "@/db";
+import { getDb } from "@/db";
 import { dealChainActions, deals } from "@/db/schema";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
 import {
@@ -37,13 +37,6 @@ export async function POST(
   try {
     const arbitrator = await authenticateRequest(request);
     await enforceRateLimit("escrow-resolution", arbitrator.id, 20, 3600);
-    const configuredTelegramId = getBinding("ESCROW_ARBITRATOR_TELEGRAM_ID");
-    if (
-      !configuredTelegramId ||
-      arbitrator.telegramId !== configuredTelegramId
-    ) {
-      return noStoreJson({ error: "Arbitrator access required." }, { status: 403 });
-    }
     const payload = resolutionSchema.parse(await request.json());
     const { id } = await context.params;
     const db = getDb();

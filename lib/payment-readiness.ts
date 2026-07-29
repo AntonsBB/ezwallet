@@ -3,8 +3,6 @@ export const paymentBlockers = [
   "platform_wallet_invalid",
   "arbitrator_wallet_missing",
   "arbitrator_wallet_invalid",
-  "arbitrator_operator_missing",
-  "arbitrator_operator_invalid",
   "wallet_roles_not_distinct",
 ] as const;
 
@@ -18,7 +16,6 @@ export function paymentReadinessMessage(
   if (
     blockers.includes("platform_wallet_invalid") ||
     blockers.includes("arbitrator_wallet_invalid") ||
-    blockers.includes("arbitrator_operator_invalid") ||
     blockers.includes("wallet_roles_not_distinct")
   ) {
     return `Payments are paused because the ${network} fee and arbitration configuration needs review.`;
@@ -31,10 +28,6 @@ export function paymentReadinessMessage(
   if (blockers.includes("arbitrator_wallet_missing")) {
     missing.push("arbitrator wallet");
   }
-  if (blockers.includes("arbitrator_operator_missing")) {
-    missing.push("authorized arbitrator");
-  }
-
   if (missing.length === 0) {
     return `Payments are paused while the ${network} escrow configuration is checked.`;
   }

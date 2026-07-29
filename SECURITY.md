@@ -20,7 +20,8 @@ Include:
 
 High-priority areas include:
 
-- Telegram Mini App init-data validation or replay;
+- wallet session theft, fixation, revocation, CSRF, or replay;
+- optional Telegram Mini App init-data validation or replay;
 - session fixation, CSRF, authorization, or IDOR;
 - TON proof validation or wallet/account substitution;
 - escrow code/data substitution, payment amount, recipient, fee, deadline,
@@ -48,5 +49,7 @@ Only the latest production deployment and the default branch receive security up
   until independently verified on-chain.
 - Native-TON escrow remains testnet-only until the contract and reconciliation
   paths receive independent security review and end-to-end adversarial testing.
-- Telegram identity and TON wallet ownership are distinct checks.
+- TON wallet ownership proof is the primary account check. Optional Telegram
+  identity is a distinct compatibility check and does not authorize escrow
+  arbitration.
 - Government-ID, NFC passport, custody, fiat exchange, and tax-reporting systems are not part of the initial public release.

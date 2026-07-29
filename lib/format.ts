@@ -1,6 +1,7 @@
 export const NANO_PER_TON = 1_000_000_000n;
 export const PLATFORM_FEE_BPS = 100n;
 export const BPS_DENOMINATOR = 10_000n;
+export const MIN_TRANSACTION_AMOUNT_NANO = 1_000_000n;
 
 export function tonToNano(input: string) {
   const normalized = input.trim();
@@ -12,6 +13,14 @@ export function tonToNano(input: string) {
     BigInt(whole) * NANO_PER_TON +
     BigInt(fraction.padEnd(9, "0"))
   ).toString();
+}
+
+export function marketplaceAmountToNano(input: string) {
+  const amountNano = tonToNano(input);
+  if (BigInt(amountNano) < MIN_TRANSACTION_AMOUNT_NANO) {
+    throw new Error("The minimum transaction amount is 0.001 TON.");
+  }
+  return amountNano;
 }
 
 export function nanoToTon(input: string, maximumFractionDigits = 2) {

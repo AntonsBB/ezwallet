@@ -22,10 +22,7 @@ import {
   House,
   Info,
   Laptop,
-  List as ListIcon,
-  Map as MapIcon,
   MapPin,
-  MessageCircle,
   PackageCheck,
   Pause,
   PencilLine,
@@ -47,6 +44,9 @@ import {
   X,
   Zap,
   FileDown,
+  LockKeyhole,
+  Target,
+  Trophy,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { calculateTransactionFees, nanoToTon } from "@/lib/format";
@@ -81,6 +81,8 @@ type SheetName =
   | "checkout"
   | "payment"
   | "profile"
+  | "storefront"
+  | "verification"
   | "listings"
   | "market-filters"
   | "report"
@@ -117,7 +119,7 @@ type Listing = {
 
 type User = {
   id: number;
-  telegramId: string;
+  telegramId: string | null;
   username: string | null;
   displayName: string;
   photoUrl: string | null;
@@ -126,10 +128,39 @@ type User = {
   walletAddress: string | null;
   walletNetwork: "mainnet" | "testnet" | null;
   walletVerifiedAt: string | null;
+  verificationLevel:
+    | "unverified"
+    | "wallet"
+    | "identity"
+    | "enhanced"
+    | "business";
+  verificationLabel: string;
   ratingMilli: number;
   reviewCount: number;
   dealsCompleted: number;
   updatedAt: string;
+};
+
+type PublicStorefront = {
+  profile: {
+    id: number;
+    displayName: string;
+    photoUrl: string | null;
+    bio: string;
+    walletVerified: boolean;
+    verificationLevel:
+      | "unverified"
+      | "wallet"
+      | "identity"
+      | "enhanced"
+      | "business";
+    verificationLabel: string;
+    ratingMilli: number;
+    reviewCount: number;
+    dealsCompleted: number;
+    memberSince: string;
+  };
+  listings: Listing[];
 };
 
 type Deal = {
@@ -198,7 +229,6 @@ type AppConfig = {
   network: "mainnet" | "testnet";
   paymentsReady: boolean;
   paymentBlockers: PaymentBlocker[];
-  telegramReady: boolean;
 };
 
 type TelegramWebApp = {
@@ -378,7 +408,7 @@ function AppHeader({
       <div className="header-actions">
         <span className={connected ? "network-pill is-online" : "network-pill"}>
           <i />
-          {connected ? "TON connected" : "TON wallet"}
+          {connected ? "Wallet connected" : "Connect wallet"}
         </span>
         <button
           type="button"
@@ -431,7 +461,7 @@ function ListingCard({
   proximity?: string | null;
   saved?: boolean;
   saving?: boolean;
-  onToggleSave: (listing: Listing) => void;
+  onToggleSave?: (listing: Listing) => void;
 }) {
   return (
     <article
@@ -484,16 +514,22 @@ function ListingCard({
           </span>
         </span>
       </button>
-      <button
-        type="button"
-        className={saved ? "save-button is-saved" : "save-button"}
-        aria-label={saved ? `Remove ${listing.title} from saved` : `Save ${listing.title}`}
-        aria-pressed={saved}
-        disabled={saving}
-        onClick={() => onToggleSave(listing)}
-      >
-        <Heart size={15} fill={saved ? "currentColor" : "none"} />
-      </button>
+      {onToggleSave && (
+        <button
+          type="button"
+          className={saved ? "save-button is-saved" : "save-button"}
+          aria-label={
+            saved
+              ? `Remove ${listing.title} from saved`
+              : `Save ${listing.title}`
+          }
+          aria-pressed={saved}
+          disabled={saving}
+          onClick={() => onToggleSave(listing)}
+        >
+          <Heart size={15} fill={saved ? "currentColor" : "none"} />
+        </button>
+      )}
     </article>
   );
 }
@@ -669,9 +705,9 @@ function MarketScreen({
         </button>
         <span>
           {!signedIn
-            ? "Open in Telegram to save listings"
+            ? "Connect a wallet to save listings"
             : favoritesAvailable
-              ? "Synced to your Telegram profile"
+              ? "Synced to your wallet profile"
               : "Saved listings are unavailable"}
         </span>
       </div>
@@ -927,7 +963,6 @@ function WorkScreen({
   savingListingIds: ReadonlySet<string>;
   onToggleSave: (listing: Listing) => void;
 }) {
-  const [view, setView] = useState<"map" | "list">("map");
   const [referencePoint, setReferencePoint] =
     useState<PublicMapPoint | null>(null);
   const orderedListings = useMemo(
@@ -977,34 +1012,17 @@ function WorkScreen({
 
       <section className="work-view-heading" aria-labelledby="work-view-title">
         <div>
-          <span>Explore work</span>
+          <span>Live mission map</span>
           <h2 id="work-view-title">
-            {referencePoint ? "Sorted around your area" : "Browse every open post"}
+            {referencePoint
+              ? "Nearest opportunities first"
+              : "Pick a nearby mission"}
           </h2>
         </div>
-        <div className="work-view-toggle" aria-label="Work results view">
-          <button
-            type="button"
-            className={view === "map" ? "is-active" : ""}
-            aria-pressed={view === "map"}
-            onClick={() => setView("map")}
-          >
-            <MapIcon size={14} /> Map
-          </button>
-          <button
-            type="button"
-            className={view === "list" ? "is-active" : ""}
-            aria-pressed={view === "list"}
-            onClick={() => setView("list")}
-          >
-            <ListIcon size={14} /> List
-          </button>
-        </div>
+        <span className="mission-count">{mappedListings.length} mapped</span>
       </section>
 
-      {view === "map" && (
-        <>
-          <WorkMap
+      <WorkMap
             listings={mappedListings}
             referencePoint={referencePoint}
             onReferencePointChange={setReferencePoint}
@@ -1015,7 +1033,7 @@ function WorkScreen({
               if (listing) onOpen(listing);
             }}
           />
-          {mappedListings.length > 0 && (
+      {mappedListings.length > 0 && (
             <section
               className="work-map-results"
               aria-label="Work shown on the map"
@@ -1054,36 +1072,31 @@ function WorkScreen({
                 );
               })}
             </section>
-          )}
-          {remoteOrUnmappedCount > 0 && (
-            <button
-              type="button"
-              className="unmapped-work-link"
-              onClick={() => setView("list")}
-            >
-              <ListIcon size={15} />
-              See {remoteOrUnmappedCount} remote or area-free{" "}
-              {remoteOrUnmappedCount === 1 ? "post" : "posts"} in List
-              <ChevronRight size={15} />
-            </button>
-          )}
-        </>
+      )}
+      {remoteOrUnmappedCount > 0 && (
+        <a className="unmapped-work-link" href="#mission-board">
+          {remoteOrUnmappedCount} remote or area-free{" "}
+          {remoteOrUnmappedCount === 1 ? "mission" : "missions"} below
+          <ChevronRight size={15} />
+        </a>
       )}
 
       <section className="work-cta">
         <div>
           <span>Need something done?</span>
-          <strong>Post a clear brief in two minutes.</strong>
+          <strong>Launch a clear job or service mission.</strong>
         </div>
         <button type="button" onClick={onCreate}>
-          Post work <Plus size={16} />
+          Post a mission <Plus size={16} />
         </button>
       </section>
 
-      {view === "list" && (
-        <section className="content-section work-list-section">
+      <section
+        id="mission-board"
+        className="content-section work-list-section"
+      >
           <SectionHeading
-            title={referencePoint ? "Nearest first" : "Recommended for you"}
+            title={referencePoint ? "Nearest missions" : "Mission board"}
             action={`${orderedListings.length} open`}
           />
           <div className="work-list">
@@ -1105,12 +1118,11 @@ function WorkScreen({
           {!orderedListings.length && (
             <div className="empty-state">
               <BriefcaseBusiness size={24} />
-              <strong>No work matches</strong>
-              <p>Try clearing a filter.</p>
+              <strong>No open missions match</strong>
+              <p>Try clearing a filter or post the first opportunity.</p>
             </div>
           )}
-        </section>
-      )}
+      </section>
     </main>
   );
 }
@@ -1199,13 +1211,16 @@ function WalletScreen({
               </small>
               <strong>{compactAddress(walletAddress)}</strong>
             </div>
-            <button type="button" onClick={onDisconnect}>
-              Disconnect
+            <button
+              type="button"
+              onClick={walletVerified ? onDisconnect : onConnect}
+            >
+              {walletVerified ? "Sign out" : "Verify"}
             </button>
           </div>
         ) : (
           <button className="primary-action wallet-connect" onClick={onConnect}>
-            Connect TON Wallet <ArrowRight size={18} />
+            Connect wallet <ArrowRight size={18} />
           </button>
         )}
       </section>
@@ -1335,24 +1350,44 @@ function ProfileScreen({
   user,
   listingCount,
   connected,
+  balanceNano,
+  balanceState,
   onManageListings,
   onEdit,
+  onVerification,
   onSafety,
 }: {
   user: User | null;
   listingCount: number;
   connected: boolean;
+  balanceNano: string | null;
+  balanceState: "idle" | "loading" | "ready" | "error";
   onManageListings: () => void;
   onEdit: () => void;
+  onVerification: () => void;
   onSafety: () => void;
 }) {
-  const name = user?.displayName ?? "Telegram guest";
+  const name = user?.displayName ?? "Wallet guest";
   const hasReviews = Boolean(user && user.reviewCount > 0);
+  const completedDeals = user?.dealsCompleted ?? 0;
+  const storeLevel =
+    !user?.walletVerifiedAt
+      ? "Explorer"
+      : completedDeals >= 25 && user.ratingMilli >= 4_700
+        ? "Trusted merchant"
+        : completedDeals >= 5
+          ? "Proven seller"
+          : "Verified newcomer";
+  const nextMilestone =
+    completedDeals >= 25 ? null : completedDeals >= 5 ? 25 : 5;
+  const milestoneProgress = nextMilestone
+    ? Math.min(100, Math.round((completedDeals / nextMilestone) * 100))
+    : 100;
   return (
     <main className="screen profile-screen">
       <section className="profile-hero">
         <div className="profile-topline">
-          <span className="eyebrow">Profile & reputation</span>
+          <span className="eyebrow">Your storefront</span>
           <button type="button" aria-label="Profile settings" onClick={onEdit}>
             <Settings2 size={19} />
           </button>
@@ -1362,12 +1397,12 @@ function ProfileScreen({
           <div>
             <h1>{name}</h1>
             <p>
-              {user ? (
+              {user?.walletVerifiedAt ? (
                 <>
-                  <BadgeCheck size={15} /> Telegram verified
+                  <BadgeCheck size={15} /> Wallet verified
                 </>
               ) : (
-                <>Open inside Telegram to verify your profile</>
+                <>Connect a wallet to create your profile</>
               )}
             </p>
           </div>
@@ -1375,21 +1410,57 @@ function ProfileScreen({
         <div className="profile-location">
           <MapPin size={15} /> {user?.city || "Location not set"}{" "}
           <i />
-          {connected ? "TON wallet linked" : "Wallet not linked"}
+          {connected ? "Settlement wallet linked" : "Wallet not linked"}
         </div>
       </section>
 
+      {user && (
+        <section
+          className="owner-balance-card"
+          aria-label="Private wallet snapshot"
+        >
+          <div>
+            <span>
+              <LockKeyhole size={13} /> Private to you
+            </span>
+            <strong>
+              {balanceState === "loading"
+                ? "Checking wallet…"
+                : balanceState === "ready" && balanceNano !== null
+                  ? `${nanoToTon(balanceNano, 4)} TON`
+                  : balanceState === "error"
+                    ? "Balance unavailable"
+                    : "Connect a settlement wallet"}
+            </strong>
+            <small>
+              On-chain wallet balance · never shown on your public store
+            </small>
+          </div>
+          <WalletCards size={25} />
+        </section>
+      )}
+
       <section className="reputation-card">
         <div className="reputation-score">
-          <span>Trust score</span>
-          <strong>
-            {hasReviews && user ? formatRating(user.ratingMilli) : "—"}
-          </strong>
+          <span>Store level</span>
+          <strong className="store-level">{storeLevel}</strong>
           <p>
-            <Star size={14} fill={hasReviews ? "currentColor" : "none"} /> Based
-            on{" "}
-            {user?.reviewCount ?? 0} reviews
+            <Trophy size={14} /> Earned from real deals, reviews and verification
           </p>
+          <div
+            className="store-progress"
+            aria-label={`${milestoneProgress}% to the next store level`}
+          >
+            <i style={{ width: `${milestoneProgress}%` }} />
+          </div>
+          <small>
+            {nextMilestone
+              ? `${Math.max(
+                  0,
+                  nextMilestone - completedDeals
+                )} completed deals to the next level`
+              : "Highest activity milestone reached"}
+          </small>
         </div>
         <div className="reputation-stats">
           <div>
@@ -1401,8 +1472,8 @@ function ProfileScreen({
             <span>listings</span>
           </div>
           <div>
-            <b>—</b>
-            <span>response not measured</span>
+            <b>{hasReviews && user ? formatRating(user.ratingMilli) : "—"}</b>
+            <span>{user?.reviewCount ?? 0} reviews</span>
           </div>
         </div>
       </section>
@@ -1414,8 +1485,12 @@ function ProfileScreen({
             <span>
               <BadgeCheck size={19} />
             </span>
-            <strong>{user ? "Telegram ID" : "Telegram session"}</strong>
-            <small>{user ? "Verified signal" : "Open inside Telegram"}</small>
+            <strong>Wallet identity</strong>
+            <small>
+              {user?.walletVerifiedAt
+                ? "Cryptographic proof verified"
+                : "Connect to verify"}
+            </small>
           </div>
           <div>
             <span>
@@ -1430,15 +1505,22 @@ function ProfileScreen({
           </div>
           <div>
             <span>
-              <MessageCircle size={19} />
+            <Target size={19} />
             </span>
-            <strong>Response tracking</strong>
-            <small>Not measured yet</small>
+            <strong>Identity level</strong>
+            <small>{user?.verificationLabel ?? "Not verified"}</small>
           </div>
         </div>
       </section>
 
       <section className="profile-menu">
+        <button type="button" onClick={onVerification}>
+          <span>
+            <BadgeCheck size={18} /> Identity verification
+          </span>
+          <strong>{user?.verificationLabel ?? "Not verified"}</strong>
+          <ChevronRight size={17} />
+        </button>
         <button type="button" onClick={onManageListings}>
           <span>
             <Store size={18} /> My listings
@@ -1460,6 +1542,167 @@ function ProfileScreen({
         </button>
       </section>
     </main>
+  );
+}
+
+function VerificationSheet({ user }: { user: User | null }) {
+  return (
+    <div className="verification-sheet">
+      <section className="verification-current">
+        <span>Current public level</span>
+        <strong>{user?.verificationLabel ?? "Not verified"}</strong>
+        <p>
+          {user?.walletVerifiedAt
+            ? "Your wallet-control proof is active. It does not prove your legal identity."
+            : "Connect a wallet to create your account and establish wallet control."}
+        </p>
+      </section>
+      <section className="verification-path" aria-label="Verification levels">
+        <div className={user?.walletVerifiedAt ? "is-complete" : ""}>
+          <span>1</span>
+          <strong>Wallet proof</strong>
+          <small>Cryptographic control of your settlement wallet</small>
+        </div>
+        <div
+          className={
+            user?.verificationLevel === "identity" ||
+            user?.verificationLevel === "enhanced" ||
+            user?.verificationLevel === "business"
+              ? "is-complete"
+              : ""
+          }
+        >
+          <span>2</span>
+          <strong>Identity check</strong>
+          <small>Regulated provider attestation with expiry</small>
+        </div>
+        <div
+          className={
+            user?.verificationLevel === "enhanced" ||
+            user?.verificationLevel === "business"
+              ? "is-complete"
+              : ""
+          }
+        >
+          <span>3</span>
+          <strong>Enhanced or business</strong>
+          <small>Address or business evidence, when required</small>
+        </div>
+      </section>
+      <div className="verification-provider-note">
+        <ShieldCheck size={19} />
+        <div>
+          <strong>Identity onboarding is not live yet</strong>
+          <p>
+            A regulated verification provider and legal operating model must be
+            approved first. Easy Wallet will not collect documents directly or
+            award a fake badge.
+          </p>
+        </div>
+      </div>
+      <a className="verification-policy-link" href="/privacy">
+        Read the privacy policy <ChevronRight size={15} />
+      </a>
+    </div>
+  );
+}
+
+function StorefrontSheet({
+  storefront,
+  state,
+  onRetry,
+  onOpenListing,
+}: {
+  storefront: PublicStorefront | null;
+  state: "loading" | "ready" | "error";
+  onRetry: () => void;
+  onOpenListing: (listing: Listing) => void;
+}) {
+  if (state === "loading") {
+    return (
+      <div className="storefront-status" role="status">
+        <RefreshCw size={20} />
+        <strong>Loading storefront…</strong>
+      </div>
+    );
+  }
+  if (state === "error" || !storefront) {
+    return (
+      <div className="storefront-status is-error">
+        <WifiOff size={20} />
+        <strong>Storefront unavailable</strong>
+        <p>No cached or invented profile data is shown.</p>
+        <button type="button" onClick={onRetry}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  const { profile, listings: storeListings } = storefront;
+  return (
+    <div className="public-storefront">
+      <section className="public-storefront-hero">
+        <Avatar
+          name={profile.displayName}
+          src={profile.photoUrl}
+          size="large"
+        />
+        <div>
+          <span>Public storefront</span>
+          <h2>{profile.displayName}</h2>
+          <p>
+            <BadgeCheck size={14} /> {profile.verificationLabel}
+          </p>
+        </div>
+      </section>
+      {profile.bio && <p className="public-storefront-bio">{profile.bio}</p>}
+      <section className="public-storefront-stats" aria-label="Store activity">
+        <div>
+          <b>{profile.dealsCompleted}</b>
+          <span>completed</span>
+        </div>
+        <div>
+          <b>
+            {reputationLabel(profile.ratingMilli, profile.reviewCount)}
+          </b>
+          <span>{profile.reviewCount} reviews</span>
+        </div>
+        <div>
+          <b>{storeListings.length}</b>
+          <span>active listings</span>
+        </div>
+      </section>
+      <div className="storefront-trust-note">
+        <ShieldCheck size={16} />
+        <span>
+          Balance and wallet address stay private. Only verified status and
+          real marketplace activity are public.
+        </span>
+      </div>
+      <section className="storefront-listings">
+        <SectionHeading
+          title="Available now"
+          action={`${storeListings.length} live`}
+        />
+        <div className="listing-grid">
+          {storeListings.map((listing) => (
+            <ListingCard
+              key={listing.id}
+              listing={listing}
+              onOpen={onOpenListing}
+            />
+          ))}
+        </div>
+        {!storeListings.length && (
+          <div className="empty-state">
+            <Store size={23} />
+            <strong>No active listings</strong>
+            <p>This store has nothing published right now.</p>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -1720,7 +1963,7 @@ function ListingSheet({
   onPay,
   onApply,
   onReport,
-  onMessage,
+  onViewStore,
   onToggleSave,
   saved,
   saving,
@@ -1734,7 +1977,7 @@ function ListingSheet({
   onPay: (listing: Listing) => void;
   onApply: (listing: Listing) => void;
   onReport: (listing: Listing) => void;
-  onMessage: (listing: Listing) => void;
+  onViewStore: (listing: Listing) => void;
   onToggleSave: (listing: Listing) => void;
   saved: boolean;
   saving: boolean;
@@ -1792,7 +2035,7 @@ function ListingSheet({
             <strong>{listing.ownerName}</strong>
             <div className="seller-verification">
               <span>
-                <BadgeCheck size={12} /> Telegram-authenticated
+                <BadgeCheck size={12} /> Marketplace profile
               </span>
               {sellerWalletReady ? (
                 <span>
@@ -1825,17 +2068,10 @@ function ListingSheet({
           </div>
           <button
             type="button"
-            aria-label={
-              isOwner
-                ? "This is your listing"
-                : listing.ownerUsername
-                ? `Message ${listing.ownerName} on Telegram`
-                : "Seller has no public Telegram username"
-            }
-            disabled={!listing.ownerUsername || isOwner}
-            onClick={() => onMessage(listing)}
+            aria-label={`View ${listing.ownerName}'s storefront`}
+            onClick={() => onViewStore(listing)}
           >
-            <MessageCircle size={17} />
+            <Store size={17} />
           </button>
         </div>
 
@@ -2305,7 +2541,7 @@ function CreateSheet({
         {!canPublish && (
           <div className="form-notice">
             <Info size={17} />
-            Open Easy Wallet from Telegram to{" "}
+            Connect and verify your wallet to{" "}
             {listing ? "edit this listing" : "publish under a verified profile"}.
           </div>
         )}
@@ -2803,12 +3039,16 @@ export default function EzWalletApp() {
     paymentBlockers: [
       "platform_wallet_missing",
       "arbitrator_wallet_missing",
-      "arbitrator_operator_missing",
     ],
-    telegramReady: false,
   });
   const [session, setSession] = useState<User | null>(null);
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [walletBalanceNano, setWalletBalanceNano] = useState<string | null>(
+    null
+  );
+  const [walletBalanceState, setWalletBalanceState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const [applications, setApplications] = useState<ApplicationSummary[]>([]);
   const [ownedListings, setOwnedListings] = useState<OwnerListing[]>([]);
   const [selectedOwnerListing, setSelectedOwnerListing] =
@@ -2831,6 +3071,10 @@ export default function EzWalletApp() {
       ...defaultMarketFilterForm,
     });
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const [storefront, setStorefront] = useState<PublicStorefront | null>(null);
+  const [storefrontState, setStorefrontState] = useState<
+    "loading" | "ready" | "error"
+  >("ready");
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [query, setQuery] = useState("");
   const [marketCategory, setMarketCategory] = useState("All");
@@ -2869,21 +3113,44 @@ export default function EzWalletApp() {
         session.walletVerifiedAt
     );
 
-  const telegramWebApp =
-    typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
-  const initData = telegramWebApp?.initData ?? "";
-  const telegram = initData ? telegramWebApp : undefined;
+  const [telegramWebApp, setTelegramWebApp] =
+    useState<TelegramWebApp | undefined>();
+  const telegram = telegramWebApp?.initData ? telegramWebApp : undefined;
+
+  useEffect(() => {
+    const launchParameters = `${window.location.search}&${window.location.hash}`;
+    if (!launchParameters.includes("tgWebAppData")) return;
+    if (window.Telegram?.WebApp) {
+      const timer = window.setTimeout(
+        () => setTelegramWebApp(window.Telegram?.WebApp),
+        0
+      );
+      return () => window.clearTimeout(timer);
+    }
+
+    const scriptId = "telegram-web-app-bridge";
+    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+    const handleLoad = () => setTelegramWebApp(window.Telegram?.WebApp);
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://telegram.org/js/telegram-web-app.js";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+    script.addEventListener("load", handleLoad);
+    return () => script?.removeEventListener("load", handleLoad);
+  }, []);
 
   const apiFetch = useCallback(
     (path: string, options: RequestInit = {}) => {
       const headers = new Headers(options.headers);
-      if (initData) headers.set("x-telegram-init-data", initData);
       if (options.body && !(options.body instanceof FormData)) {
         headers.set("content-type", "application/json");
       }
-      return fetch(path, { ...options, headers });
+      return fetch(path, { ...options, headers, credentials: "same-origin" });
     },
-    [initData]
+    []
   );
 
   const showToast = useCallback(
@@ -2921,16 +3188,50 @@ export default function EzWalletApp() {
   }, []);
 
   const loadSession = useCallback(async () => {
-    if (!initData) return;
-    const response = await apiFetch("/api/session", { method: "POST" });
+    const response = await apiFetch("/api/session", {
+      method: "GET",
+      cache: "no-store",
+    });
     if (!response.ok) {
+      if (response.status === 401) {
+        setSession(null);
+        setDeals([]);
+        setApplications([]);
+        setOwnedListings([]);
+        setSavedListingIds([]);
+        setFavoritesAvailable(true);
+        setWalletBalanceNano(null);
+        setWalletBalanceState("idle");
+        return false;
+      }
       const data = (await response.json()) as { error?: string };
-      throw new Error(data.error ?? "Telegram session could not be verified.");
+      throw new Error(data.error ?? "Wallet session could not be verified.");
     }
     const data = (await response.json()) as { user: User; deals: Deal[] };
     setSession(data.user);
     setDeals(data.deals);
     setOwnedListingsState("loading");
+    if (data.user.walletVerifiedAt) {
+      setWalletBalanceState("loading");
+      void apiFetch("/api/wallet/balance", { cache: "no-store" })
+        .then(async (balanceResponse) => {
+          if (!balanceResponse.ok) {
+            throw new Error("Wallet balance is unavailable.");
+          }
+          const balanceData = (await balanceResponse.json()) as {
+            balanceNano: string;
+          };
+          setWalletBalanceNano(balanceData.balanceNano);
+          setWalletBalanceState("ready");
+        })
+        .catch(() => {
+          setWalletBalanceNano(null);
+          setWalletBalanceState("error");
+        });
+    } else {
+      setWalletBalanceNano(null);
+      setWalletBalanceState("idle");
+    }
 
     const [applicationsResult, favoritesResult, listingsResult] =
       await Promise.allSettled([
@@ -2970,10 +3271,11 @@ export default function EzWalletApp() {
     } else {
       setOwnedListingsState("error");
     }
-  }, [apiFetch, initData]);
+    return true;
+  }, [apiFetch]);
 
   const reloadOwnedListings = useCallback(async () => {
-    if (!initData) return;
+    if (!session) return;
     setOwnedListingsState("loading");
     try {
       const response = await apiFetch("/api/listings", {
@@ -2997,7 +3299,42 @@ export default function EzWalletApp() {
         "error"
       );
     }
-  }, [apiFetch, initData, showToast]);
+  }, [apiFetch, session, showToast]);
+
+  const openWalletConnection = useCallback(async () => {
+    try {
+      tonConnectUi.setConnectionNetwork(
+        config.network === "mainnet" ? "-239" : "-3"
+      );
+      tonConnectUi.setConnectRequestParameters({ state: "loading" });
+      const response = await apiFetch("/api/wallet/challenge", {
+        method: "POST",
+      });
+      const data = (await response.json()) as {
+        challenge?: string;
+        error?: string;
+      };
+      if (!response.ok || !data.challenge) {
+        throw new Error(data.error ?? "Wallet verification could not start.");
+      }
+      tonConnectUi.setConnectRequestParameters({
+        state: "ready",
+        value: { tonProof: data.challenge },
+      });
+      setWalletProofStatus(wallet ? "reconnect" : "ready");
+      if (wallet) await tonConnectUi.disconnect();
+      await tonConnectUi.openModal();
+    } catch (error) {
+      tonConnectUi.setConnectRequestParameters(null);
+      setWalletProofStatus("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Wallet verification could not start.",
+        "error"
+      );
+    }
+  }, [apiFetch, config.network, showToast, tonConnectUi, wallet]);
 
   useEffect(() => {
     telegram?.ready();
@@ -3014,7 +3351,7 @@ export default function EzWalletApp() {
         showToast(
           error instanceof Error
             ? error.message
-            : "Telegram session could not be verified.",
+            : "Wallet session could not be verified.",
           "error"
         );
       });
@@ -3023,65 +3360,19 @@ export default function EzWalletApp() {
   }, [loadBootstrap, loadSession, showToast]);
 
   useEffect(() => {
-    if (!session) return;
-    if (
-      walletAddress &&
-      session.walletAddress === walletAddress &&
-      session.walletVerifiedAt
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    if (!wallet) {
-      tonConnectUi.setConnectionNetwork(
-        config.network === "mainnet" ? "-239" : "-3"
-      );
-    }
-    tonConnectUi.setConnectRequestParameters({ state: "loading" });
-    void apiFetch("/api/wallet/challenge", { method: "POST" })
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          challenge?: string;
-          error?: string;
-        };
-        if (!response.ok || !data.challenge) {
-          throw new Error(data.error ?? "Wallet verification could not start.");
-        }
-        if (cancelled) return;
-        tonConnectUi.setConnectRequestParameters({
-          state: "ready",
-          value: { tonProof: data.challenge },
-        });
-        setWalletProofStatus(wallet ? "reconnect" : "ready");
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        tonConnectUi.setConnectRequestParameters(null);
+    const tonProof = wallet?.connectItems?.tonProof;
+    if (!wallet || !tonProof) return;
+    if ("error" in tonProof) {
+      const timer = window.setTimeout(() => {
         setWalletProofStatus("error");
         showToast(
-          error instanceof Error
-            ? error.message
-            : "Wallet verification could not start.",
+          "This wallet did not provide a TON ownership proof. Try a compatible wallet or reconnect.",
           "error"
         );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    apiFetch,
-    config.network,
-    session,
-    showToast,
-    tonConnectUi,
-    wallet,
-    walletAddress,
-  ]);
-
-  useEffect(() => {
-    const tonProof = wallet?.connectItems?.tonProof;
-    if (!wallet || !tonProof || !("proof" in tonProof)) return;
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (!("proof" in tonProof)) return;
     const attempt = `${wallet.account.address}:${tonProof.proof.timestamp}`;
     if (proofAttempt.current === attempt) return;
     proofAttempt.current = attempt;
@@ -3097,10 +3388,14 @@ export default function EzWalletApp() {
       }),
     })
       .then(async (response) => {
-        const data = (await response.json()) as { error?: string };
+        const data = (await response.json()) as {
+          error?: string;
+          user?: User;
+        };
         if (!response.ok) {
           throw new Error(data.error ?? "Wallet proof failed.");
         }
+        if (data.user) setSession(data.user);
         setWalletProofStatus("verified");
         await loadSession();
         telegram?.HapticFeedback?.notificationOccurred("success");
@@ -3216,10 +3511,8 @@ export default function EzWalletApp() {
 
   const toggleFavorite = async (listing: Listing) => {
     if (!session) {
-      showToast(
-        "Open Easy Wallet from Telegram to save listings to your profile.",
-        "error"
-      );
+      showToast("Connect and verify a wallet to save listings.", "error");
+      void openWalletConnection();
       return;
     }
     if (!favoritesAvailable) {
@@ -3286,27 +3579,37 @@ export default function EzWalletApp() {
 
   const toggleSavedMarket = () => {
     if (!session) {
-      showToast(
-        "Open Easy Wallet from Telegram to view your saved listings.",
-        "error"
-      );
+      showToast("Connect and verify a wallet to view saved listings.", "error");
+      void openWalletConnection();
       return;
     }
     setMarketSavedOnly((current) => !current);
   };
 
-  const messageListingOwner = (listing: Listing) => {
-    const username = listing.ownerUsername?.trim();
-    if (!username || !/^[A-Za-z0-9_]{5,32}$/.test(username)) {
-      showToast("This seller has no public Telegram username.", "error");
-      return;
+  const loadStorefront = async (ownerId: number) => {
+    setStorefront(null);
+    setStorefrontState("loading");
+    setSheet("storefront");
+    try {
+      const response = await fetch(`/api/profiles/${ownerId}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const data = (await response.json()) as PublicStorefront & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Storefront could not be loaded.");
+      }
+      setStorefront(data);
+      setStorefrontState("ready");
+    } catch (error) {
+      setStorefrontState("error");
+      showToast(
+        error instanceof Error ? error.message : "Storefront could not be loaded.",
+        "error"
+      );
     }
-    const url = `https://t.me/${username}`;
-    if (telegram?.openTelegramLink) {
-      telegram.openTelegramLink(url);
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const openListing = (listing: Listing) => {
@@ -3317,6 +3620,11 @@ export default function EzWalletApp() {
 
   const openCreate = (section: "market" | "work" = tab === "work" ? "work" : "market") => {
     telegram?.HapticFeedback?.impactOccurred("light");
+    if (!session) {
+      showToast("Connect and verify a wallet to publish a listing.", "error");
+      void openWalletConnection();
+      return;
+    }
     setCreateSection(section);
     setSheet("create");
   };
@@ -3413,7 +3721,8 @@ export default function EzWalletApp() {
 
   const startPayment = async (listing: Listing) => {
     if (!session) {
-      showToast("Open Easy Wallet from Telegram to start a verified deal.", "error");
+      showToast("Connect and verify a wallet to start a deal.", "error");
+      void openWalletConnection();
       return;
     }
     if (
@@ -3428,7 +3737,7 @@ export default function EzWalletApp() {
     }
     if (!wallet || !walletAddress) {
       setSheet(null);
-      await tonConnectUi.openModal();
+      await openWalletConnection();
       showToast("Connect a TON wallet, then continue the deal.");
       return;
     }
@@ -3439,6 +3748,7 @@ export default function EzWalletApp() {
           : "Finish TON wallet verification before paying.",
         "error"
       );
+      void openWalletConnection();
       return;
     }
     if (!config.paymentsReady) {
@@ -3516,7 +3826,8 @@ export default function EzWalletApp() {
 
   const openApply = (listing: Listing) => {
     if (!session) {
-      showToast("Open Easy Wallet from Telegram to apply.", "error");
+      showToast("Connect and verify a wallet to apply.", "error");
+      void openWalletConnection();
       return;
     }
     setSelectedListing(listing);
@@ -3751,6 +4062,34 @@ export default function EzWalletApp() {
     telegram?.HapticFeedback?.impactOccurred("light");
   };
 
+  const disconnectWallet = async () => {
+    try {
+      const response = await apiFetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(data.error ?? "The browser session could not be closed.");
+      }
+      await tonConnectUi.disconnect();
+      setSession(null);
+      setDeals([]);
+      setApplications([]);
+      setOwnedListings([]);
+      setSavedListingIds([]);
+      setMarketSavedOnly(false);
+      setWorkCategory("All");
+      setWalletProofStatus("idle");
+      setWalletBalanceNano(null);
+      setWalletBalanceState("idle");
+      proofAttempt.current = "";
+      showToast("Wallet disconnected and browser session closed.", "success");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Wallet could not be disconnected.",
+        "error"
+      );
+    }
+  };
+
   return (
     <div className="page-shell">
       <div className="mini-app">
@@ -3800,9 +4139,10 @@ export default function EzWalletApp() {
               setCategory={(value) => {
                 if (value === "Saved" && !session) {
                   showToast(
-                    "Open Easy Wallet from Telegram to view your saved listings.",
+                    "Connect and verify a wallet to view saved listings.",
                     "error"
                   );
+                  void openWalletConnection();
                   return;
                 }
                 if (value === "Saved" && !favoritesAvailable) {
@@ -3831,8 +4171,8 @@ export default function EzWalletApp() {
               paymentBlockers={config.paymentBlockers}
               walletVerified={walletVerified}
               currentUserId={session?.id}
-              onConnect={() => void tonConnectUi.openModal()}
-              onDisconnect={() => void tonConnectUi.disconnect()}
+              onConnect={() => void openWalletConnection()}
+              onDisconnect={() => void disconnectWallet()}
               onDealAction={(deal, action) => {
                 if (action === "dispute") {
                   setSelectedDeal(deal);
@@ -3848,12 +4188,15 @@ export default function EzWalletApp() {
               user={session}
               listingCount={ownedListings.length}
               connected={Boolean(wallet)}
+              balanceNano={walletBalanceNano}
+              balanceState={walletBalanceState}
               onManageListings={() => {
                 if (!session) {
                   showToast(
-                    "Open Easy Wallet from Telegram to manage your listings.",
+                    "Connect and verify a wallet to manage listings.",
                     "error"
                   );
+                  void openWalletConnection();
                   return;
                 }
                 setSheet("listings");
@@ -3861,6 +4204,7 @@ export default function EzWalletApp() {
               onEdit={() => {
                 if (session) setSheet("profile");
               }}
+              onVerification={() => setSheet("verification")}
               onSafety={() => {
                 window.location.assign("/safety");
               }}
@@ -3892,7 +4236,7 @@ export default function EzWalletApp() {
                 setSelectedListing(listing);
                 setSheet("report");
               }}
-              onMessage={messageListingOwner}
+              onViewStore={(listing) => void loadStorefront(listing.ownerId)}
               onToggleSave={(listing) => void toggleFavorite(listing)}
               saved={savedListingSet.has(selectedListing.id)}
               saving={favoritePendingSet.has(selectedListing.id)}
@@ -3900,6 +4244,34 @@ export default function EzWalletApp() {
             />
           </BottomSheet>
         )}
+
+        <BottomSheet
+          open={sheet === "verification"}
+          onClose={() => setSheet(null)}
+          title="Identity & trust"
+        >
+          <VerificationSheet user={session} />
+        </BottomSheet>
+
+        <BottomSheet
+          open={sheet === "storefront"}
+          onClose={() => setSheet(null)}
+          title={storefront?.profile.displayName ?? "Storefront"}
+        >
+          <StorefrontSheet
+            storefront={storefront}
+            state={storefrontState}
+            onRetry={() => {
+              if (selectedListing) {
+                void loadStorefront(selectedListing.ownerId);
+              }
+            }}
+            onOpenListing={(listing) => {
+              setSelectedListing(listing);
+              setSheet("listing");
+            }}
+          />
+        </BottomSheet>
 
         <ListingManagerSheet
           open={sheet === "listings"}

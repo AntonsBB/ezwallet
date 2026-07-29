@@ -1,5 +1,5 @@
 import { getBinding } from "@/db";
-import { timingSafeSecretEqual } from "@/lib/telegram";
+import { constantTimeTextEqual } from "@/lib/security";
 
 type TelegramUpdate = {
   message?: {
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
   const providedSecret =
     request.headers.get("x-telegram-bot-api-secret-token") ?? "";
-  if (!(await timingSafeSecretEqual(providedSecret, webhookSecret))) {
+  if (!(await constantTimeTextEqual(providedSecret, webhookSecret))) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
   }
 

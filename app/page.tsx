@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { canonicalAppOrigin, telegramBotUrl } from "@/lib/app-url";
+import { canonicalAppOrigin } from "@/lib/app-url";
 import { EzWalletProviders } from "./providers";
 import EzWalletApp from "./EzWalletApp";
 
@@ -17,10 +17,7 @@ export default async function Home() {
   const origin = canonicalAppOrigin(fallbackOrigin);
 
   return (
-    <EzWalletProviders
-      manifestUrl={`${origin}/tonconnect-manifest.json`}
-      twaReturnUrl={telegramBotUrl()}
-    >
+    <EzWalletProviders manifestUrl={`${origin}/tonconnect-manifest.json`}>
       <EzWalletApp />
     </EzWalletProviders>
   );
