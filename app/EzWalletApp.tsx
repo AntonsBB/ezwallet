@@ -27,6 +27,8 @@ import {
   MapPin,
   MessageCircle,
   PackageCheck,
+  Pause,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -63,6 +65,7 @@ type SheetName =
   | "checkout"
   | "payment"
   | "profile"
+  | "listings"
   | "report"
   | "dispute"
   | null;
@@ -150,6 +153,19 @@ type ApplicationSummary = {
   status: string;
 };
 
+type OwnerListing = Pick<
+  Listing,
+  | "id"
+  | "section"
+  | "type"
+  | "title"
+  | "priceNano"
+  | "imageUrl"
+  | "delivery"
+  | "status"
+  | "createdAt"
+>;
+
 type AppConfig = {
   feeBps: number;
   network: "mainnet" | "testnet";
@@ -207,6 +223,10 @@ function formatRating(ratingMilli: number) {
   return (ratingMilli / 1000).toFixed(1);
 }
 
+function reputationLabel(ratingMilli: number, reviewCount: number) {
+  return reviewCount > 0 ? formatRating(ratingMilli) : "New seller";
+}
+
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     pending_wallet: "Waiting for wallet",
@@ -215,6 +235,18 @@ function statusLabel(status: string) {
     fulfilled: "Completed",
     cancelled: "Cancelled",
     disputed: "Needs review",
+  };
+  return labels[status] ?? status.replaceAll("_", " ");
+}
+
+function listingStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    draft: "Draft",
+    active: "Live",
+    paused: "Paused",
+    sold: "Sold",
+    closed: "Closed",
+    removed: "Removed",
   };
   return labels[status] ?? status.replaceAll("_", " ");
 }
@@ -401,8 +433,14 @@ function ListingCard({
           <span className="listing-category">{listing.category}</span>
           <strong>{listing.title}</strong>
           <span className="listing-meta">
-            <Star size={12} fill="currentColor" />{" "}
-            {formatRating(listing.ownerRatingMilli)}
+            <Star
+              size={12}
+              fill={listing.ownerReviewCount > 0 ? "currentColor" : "none"}
+            />{" "}
+            {reputationLabel(
+              listing.ownerRatingMilli,
+              listing.ownerReviewCount
+            )}
             <i>·</i>
             {listing.location}
             {proximity && (
@@ -1040,18 +1078,19 @@ function ProfileScreen({
   user,
   listingCount,
   connected,
-  onCreate,
+  onManageListings,
   onEdit,
   onSafety,
 }: {
   user: User | null;
   listingCount: number;
   connected: boolean;
-  onCreate: () => void;
+  onManageListings: () => void;
   onEdit: () => void;
   onSafety: () => void;
 }) {
   const name = user?.displayName ?? "Telegram guest";
+  const hasReviews = Boolean(user && user.reviewCount > 0);
   return (
     <main className="screen profile-screen">
       <section className="profile-hero">
@@ -1077,7 +1116,7 @@ function ProfileScreen({
           </div>
         </div>
         <div className="profile-location">
-          <MapPin size={15} /> {user?.city ?? "Riga"}{" "}
+          <MapPin size={15} /> {user?.city || "Location not set"}{" "}
           <i />
           {connected ? "TON wallet linked" : "Wallet not linked"}
         </div>
@@ -1086,9 +1125,12 @@ function ProfileScreen({
       <section className="reputation-card">
         <div className="reputation-score">
           <span>Trust score</span>
-          <strong>{user ? formatRating(user.ratingMilli) : "—"}</strong>
+          <strong>
+            {hasReviews && user ? formatRating(user.ratingMilli) : "—"}
+          </strong>
           <p>
-            <Star size={14} fill="currentColor" /> Based on{" "}
+            <Star size={14} fill={hasReviews ? "currentColor" : "none"} /> Based
+            on{" "}
             {user?.reviewCount ?? 0} reviews
           </p>
         </div>
@@ -1102,41 +1144,45 @@ function ProfileScreen({
             <span>listings</span>
           </div>
           <div>
-            <b>100%</b>
-            <span>response</span>
+            <b>—</b>
+            <span>response not measured</span>
           </div>
         </div>
       </section>
 
       <section className="badge-section">
-        <SectionHeading title="Earned trust" />
+        <SectionHeading title="Trust signals" />
         <div className="badge-grid">
           <div>
             <span>
               <BadgeCheck size={19} />
             </span>
-            <strong>Telegram ID</strong>
-            <small>Identity signal</small>
+            <strong>{user ? "Telegram ID" : "Telegram session"}</strong>
+            <small>{user ? "Verified signal" : "Open inside Telegram"}</small>
           </div>
           <div>
             <span>
               <PackageCheck size={19} />
             </span>
-            <strong>Reliable trader</strong>
-            <small>Completed deals</small>
+            <strong>Completed deals</strong>
+            <small>
+              {user?.dealsCompleted
+                ? `${user.dealsCompleted} recorded`
+                : "None recorded yet"}
+            </small>
           </div>
           <div>
             <span>
               <MessageCircle size={19} />
             </span>
-            <strong>Fast replies</strong>
-            <small>Under 1 hour</small>
+            <strong>Response tracking</strong>
+            <small>Not measured yet</small>
           </div>
         </div>
       </section>
 
       <section className="profile-menu">
-        <button type="button" onClick={onCreate}>
+        <button type="button" onClick={onManageListings}>
           <span>
             <Store size={18} /> My listings
           </span>
@@ -1157,6 +1203,163 @@ function ProfileScreen({
         </button>
       </section>
     </main>
+  );
+}
+
+function ListingManagerSheet({
+  open,
+  listings,
+  state,
+  pendingIds,
+  onClose,
+  onRetry,
+  onCreate,
+  onAction,
+}: {
+  open: boolean;
+  listings: OwnerListing[];
+  state: "loading" | "ready" | "error";
+  pendingIds: ReadonlySet<string>;
+  onClose: () => void;
+  onRetry: () => void;
+  onCreate: () => void;
+  onAction: (
+    listing: OwnerListing,
+    action: "pause" | "activate" | "close"
+  ) => Promise<void>;
+}) {
+  const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
+
+  return (
+    <BottomSheet
+      open={open}
+      onClose={() => {
+        setConfirmCloseId(null);
+        onClose();
+      }}
+      title="My listings"
+    >
+      <div className="listing-manager">
+        <div className="listing-manager-intro">
+          <div>
+            <span className="eyebrow">Owner controls</span>
+            <p>
+              Pause removes a post from discovery. Closing is permanent and does
+              not alter an existing deal.
+            </p>
+          </div>
+          <button type="button" onClick={onCreate}>
+            <Plus size={15} /> New
+          </button>
+        </div>
+
+        {state === "loading" && (
+          <div className="empty-state compact" role="status">
+            <RefreshCw size={24} />
+            <strong>Loading your real listings</strong>
+            <p>No placeholder posts are shown.</p>
+          </div>
+        )}
+
+        {state === "error" && (
+          <div className="empty-state compact" role="alert">
+            <WifiOff size={24} />
+            <strong>Your listings are unavailable</strong>
+            <p>Nothing was changed. Check your connection and retry.</p>
+            <button type="button" onClick={onRetry}>
+              <RefreshCw size={14} /> Retry
+            </button>
+          </div>
+        )}
+
+        {state === "ready" && listings.length === 0 && (
+          <div className="empty-state compact">
+            <Store size={24} />
+            <strong>No listings yet</strong>
+            <p>Create a real post when you are ready.</p>
+            <button type="button" onClick={onCreate}>
+              <Plus size={14} /> Create listing
+            </button>
+          </div>
+        )}
+
+        {state === "ready" && listings.length > 0 && (
+          <div className="owned-listing-list">
+            {listings.map((listing) => {
+              const pending = pendingIds.has(listing.id);
+              const confirmClose = confirmCloseId === listing.id;
+              return (
+                <article className="owned-listing" key={listing.id}>
+                  <div
+                    className={
+                      listing.imageUrl
+                        ? "owned-listing-media"
+                        : "owned-listing-media is-empty"
+                    }
+                  >
+                    {listing.imageUrl ? (
+                      <img src={listing.imageUrl} alt="" draggable={false} />
+                    ) : (
+                      <Store size={22} />
+                    )}
+                  </div>
+                  <div className="owned-listing-copy">
+                    <span>
+                      {listing.section} · {listing.type}
+                    </span>
+                    <strong>{listing.title}</strong>
+                    <small>{nanoToTon(listing.priceNano)} TON</small>
+                  </div>
+                  <span
+                    className={`listing-status listing-status-${listing.status}`}
+                  >
+                    {listingStatusLabel(listing.status)}
+                  </span>
+                  {(listing.status === "active" ||
+                    listing.status === "paused") && (
+                    <div className="owned-listing-actions">
+                      {listing.status === "active" ? (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => void onAction(listing, "pause")}
+                        >
+                          <Pause size={13} /> Pause
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => void onAction(listing, "activate")}
+                        >
+                          <Play size={13} /> Reactivate
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={confirmClose ? "is-confirming" : ""}
+                        disabled={pending}
+                        onClick={() => {
+                          if (!confirmClose) {
+                            setConfirmCloseId(listing.id);
+                            return;
+                          }
+                          setConfirmCloseId(null);
+                          void onAction(listing, "close");
+                        }}
+                      >
+                        <X size={13} />
+                        {confirmClose ? "Close permanently?" : "Close"}
+                      </button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -1283,8 +1486,15 @@ function ListingSheet({
               {listing.ownerName} <BadgeCheck size={14} />
             </strong>
             <span>
-              <Star size={12} fill="currentColor" />{" "}
-              {formatRating(listing.ownerRatingMilli)} ·{" "}
+              <Star
+                size={12}
+                fill={listing.ownerReviewCount > 0 ? "currentColor" : "none"}
+              />{" "}
+              {reputationLabel(
+                listing.ownerRatingMilli,
+                listing.ownerReviewCount
+              )}{" "}
+              ·{" "}
               {listing.ownerDealsCompleted} completed
             </span>
           </div>
@@ -1375,7 +1585,7 @@ const initialCreateForm: CreateForm = {
   description: "",
   category: "Other",
   priceTon: "",
-  location: "Riga",
+  location: "",
   latitude: undefined,
   longitude: undefined,
   locationRadiusMeters: undefined,
@@ -1593,6 +1803,7 @@ function CreateSheet({
           <input
             required
             value={form.location}
+            placeholder="City or approximate area"
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -2173,6 +2384,13 @@ export default function EzWalletApp() {
   const [session, setSession] = useState<User | null>(null);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [applications, setApplications] = useState<ApplicationSummary[]>([]);
+  const [ownedListings, setOwnedListings] = useState<OwnerListing[]>([]);
+  const [ownedListingsState, setOwnedListingsState] = useState<
+    "loading" | "ready" | "error"
+  >("ready");
+  const [listingLifecyclePendingIds, setListingLifecyclePendingIds] = useState<
+    string[]
+  >([]);
   const [savedListingIds, setSavedListingIds] = useState<string[]>([]);
   const [favoritePendingIds, setFavoritePendingIds] = useState<string[]>([]);
   const [favoritesAvailable, setFavoritesAvailable] = useState(true);
@@ -2277,11 +2495,14 @@ export default function EzWalletApp() {
     const data = (await response.json()) as { user: User; deals: Deal[] };
     setSession(data.user);
     setDeals(data.deals);
+    setOwnedListingsState("loading");
 
-    const [applicationsResult, favoritesResult] = await Promise.allSettled([
-      apiFetch("/api/applications", { cache: "no-store" }),
-      apiFetch("/api/favorites", { cache: "no-store" }),
-    ]);
+    const [applicationsResult, favoritesResult, listingsResult] =
+      await Promise.allSettled([
+        apiFetch("/api/applications", { cache: "no-store" }),
+        apiFetch("/api/favorites", { cache: "no-store" }),
+        apiFetch("/api/listings", { cache: "no-store" }),
+      ]);
     if (
       applicationsResult.status === "fulfilled" &&
       applicationsResult.value.ok
@@ -2305,7 +2526,43 @@ export default function EzWalletApp() {
     } else {
       setFavoritesAvailable(false);
     }
+    if (listingsResult.status === "fulfilled" && listingsResult.value.ok) {
+      const listingsData = (await listingsResult.value.json()) as {
+        listings: OwnerListing[];
+      };
+      setOwnedListings(listingsData.listings);
+      setOwnedListingsState("ready");
+    } else {
+      setOwnedListingsState("error");
+    }
   }, [apiFetch, initData]);
+
+  const reloadOwnedListings = useCallback(async () => {
+    if (!initData) return;
+    setOwnedListingsState("loading");
+    try {
+      const response = await apiFetch("/api/listings", {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(data.error ?? "Your listings could not be loaded.");
+      }
+      const data = (await response.json()) as {
+        listings: OwnerListing[];
+      };
+      setOwnedListings(data.listings);
+      setOwnedListingsState("ready");
+    } catch (error) {
+      setOwnedListingsState("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Your listings could not be loaded.",
+        "error"
+      );
+    }
+  }, [apiFetch, initData, showToast]);
 
   useEffect(() => {
     telegram?.ready();
@@ -2430,6 +2687,10 @@ export default function EzWalletApp() {
   const favoritePendingSet = useMemo(
     () => new Set(favoritePendingIds),
     [favoritePendingIds]
+  );
+  const listingLifecyclePendingSet = useMemo(
+    () => new Set(listingLifecyclePendingIds),
+    [listingLifecyclePendingIds]
   );
   const savedMarketCount = useMemo(
     () =>
@@ -2618,7 +2879,7 @@ export default function EzWalletApp() {
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Listing could not be published.");
-      await loadBootstrap();
+      await Promise.all([loadBootstrap(), loadSession()]);
       setSheet(null);
       setTab(form.section);
       telegram?.HapticFeedback?.notificationOccurred("success");
@@ -2763,6 +3024,64 @@ export default function EzWalletApp() {
       );
     } finally {
       setBusy(false);
+    }
+  };
+
+  const updateListingLifecycle = async (
+    listing: OwnerListing,
+    action: "pause" | "activate" | "close"
+  ) => {
+    if (listingLifecyclePendingSet.has(listing.id)) return;
+    setListingLifecyclePendingIds((current) => [...current, listing.id]);
+    try {
+      const response = await apiFetch(
+        `/api/listings/${encodeURIComponent(listing.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ action }),
+        }
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        listing?: {
+          id: string;
+          status: OwnerListing["status"];
+          updatedAt: string;
+        };
+      };
+      if (!response.ok || !data.listing) {
+        throw new Error(data.error ?? "The listing could not be updated.");
+      }
+      setOwnedListings((current) =>
+        current.map((candidate) =>
+          candidate.id === data.listing?.id
+            ? { ...candidate, status: data.listing.status }
+            : candidate
+        )
+      );
+      await loadBootstrap();
+      telegram?.HapticFeedback?.notificationOccurred("success");
+      showToast(
+        action === "pause"
+          ? "Listing paused and removed from discovery."
+          : action === "activate"
+            ? "Listing is live again."
+            : "Listing closed permanently.",
+        "success"
+      );
+    } catch (error) {
+      telegram?.HapticFeedback?.notificationOccurred("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "The listing could not be updated.",
+        "error"
+      );
+      await reloadOwnedListings();
+    } finally {
+      setListingLifecyclePendingIds((current) =>
+        current.filter((listingId) => listingId !== listing.id)
+      );
     }
   };
 
@@ -2973,11 +3292,18 @@ export default function EzWalletApp() {
           {tab === "profile" && (
             <ProfileScreen
               user={session}
-              listingCount={listings.filter(
-                (listing) => listing.ownerId === session?.id
-              ).length}
+              listingCount={ownedListings.length}
               connected={Boolean(wallet)}
-              onCreate={() => openCreate()}
+              onManageListings={() => {
+                if (!session) {
+                  showToast(
+                    "Open Easy Wallet from Telegram to manage your listings.",
+                    "error"
+                  );
+                  return;
+                }
+                setSheet("listings");
+              }}
               onEdit={() => {
                 if (session) setSheet("profile");
               }}
@@ -3019,6 +3345,20 @@ export default function EzWalletApp() {
             />
           </BottomSheet>
         )}
+
+        <ListingManagerSheet
+          open={sheet === "listings"}
+          listings={ownedListings}
+          state={ownedListingsState}
+          pendingIds={listingLifecyclePendingSet}
+          onClose={() => setSheet(null)}
+          onRetry={() => void reloadOwnedListings()}
+          onCreate={() => {
+            setCreateSection(tab === "work" ? "work" : "market");
+            setSheet("create");
+          }}
+          onAction={updateListingLifecycle}
+        />
 
         {sheet === "create" && (
           <CreateSheet

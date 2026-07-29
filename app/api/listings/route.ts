@@ -7,6 +7,7 @@ import { tonToNano } from "@/lib/format";
 import { normalizePublicCoordinates } from "@/lib/geo";
 import {
   enforceRateLimit,
+  noStoreJson,
   RateLimitError,
   rateLimitResponse,
 } from "@/lib/security";
@@ -61,7 +62,10 @@ export async function POST(request: Request) {
     await enforceRateLimit("listing-create", user.id, 20, 86400);
     const contentLength = Number(request.headers.get("content-length") ?? "0");
     if (contentLength > 16_384) {
-      return Response.json({ error: "Listing is too large." }, { status: 413 });
+      return noStoreJson(
+        { error: "Listing is too large." },
+        { status: 413 }
+      );
     }
     const payload = listingSchema.parse(await request.json());
     const priceNano = tonToNano(payload.priceTon);
@@ -71,7 +75,7 @@ export async function POST(request: Request) {
       radiusMeters: payload.locationRadiusMeters,
     });
     if (BigInt(priceNano) < 1_000_000n) {
-      return Response.json(
+      return noStoreJson(
         { error: "The minimum listing price is 0.001 TON." },
         { status: 400 }
       );
@@ -80,7 +84,7 @@ export async function POST(request: Request) {
       payload.mediaKey &&
       !payload.mediaKey.startsWith(`listing-media/${user.id}/`)
     ) {
-      return Response.json(
+      return noStoreJson(
         { error: "That listing image does not belong to your profile." },
         { status: 403 }
       );
@@ -105,32 +109,16 @@ export async function POST(request: Request) {
     } as const;
 
     await getDb().insert(listings).values(listing);
-    return Response.json({ listing }, { status: 201 });
+    return noStoreJson({ listing }, { status: 201 });
   } catch (error) {
     if (error instanceof RateLimitError) return rateLimitResponse(error);
     if (error instanceof z.ZodError) {
-      return Response.json(
+      return noStoreJson(
         { error: error.issues[0]?.message ?? "Listing is invalid." },
         { status: 400 }
       );
     }
-    if (
-      error instanceof Error &&
-      (error.message.includes("Telegram") ||
-        error.message.includes("preview user"))
-    ) {
-      return authErrorResponse(error);
-    }
-    console.error(
-      JSON.stringify({
-        message: "listing_create_failed",
-        error: error instanceof Error ? error.message : String(error),
-      })
-    );
-    return Response.json(
-      { error: "The listing could not be published." },
-      { status: 500 }
-    );
+    return authErrorResponse(error);
   }
 }
 
@@ -142,7 +130,7 @@ export async function GET(request: Request) {
       .from(listings)
       .where(eq(listings.ownerId, user.id))
       .orderBy(desc(listings.createdAt));
-    return Response.json({ listings: rows });
+    return noStoreJson({ listings: rows });
   } catch (error) {
     return authErrorResponse(error);
   }

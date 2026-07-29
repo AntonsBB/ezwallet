@@ -29,14 +29,16 @@ remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 ## Product surface
 
 - **Market:** physical and digital listings, search, category filtering,
-  authenticated saved listings, listing creation, direct purchase, reports.
+  authenticated saved listings, owner-only pause/reactivate/close controls,
+  listing creation, direct purchase, reports.
 - **Work:** privacy-safe approximate-area map, opt-in nearby sorting, list
   fallback, authenticated favorites, services, jobs, applications, job-owner
   decisions, and hiring.
 - **Wallet:** TON Connect, proof verification, transparent fee breakdown,
   per-deal escrow, delivery/completion/dispute actions, reviews.
-- **Profile:** Telegram identity, public reputation, editable details, listings,
-  wallet status, and safety resources.
+- **Profile:** Telegram identity, review-backed reputation without unearned
+  scores, editable details, listing management, wallet status, and safety
+  resources.
 - **Bot:** `/start` response with a Web App launch button and secret-validated
   webhook.
 

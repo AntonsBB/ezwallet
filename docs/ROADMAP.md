@@ -57,7 +57,10 @@ funds, external promotion, bot deletion, or unattended account changes.
 - [x] Expand Market into a category-led Facebook Marketplace-style browse flow.
 - [x] Add authenticated, D1-backed saved listings across Market and Work.
 - [ ] Add saved searches.
-- [ ] Add listing lifecycle controls and stronger seller/reputation context.
+- [x] Add owner-only pause, reactivate, and permanent-close listing controls.
+- [x] Replace unearned rating/response claims with review- and deal-backed
+  reputation states.
+- [ ] Add listing editing and stronger verified seller context.
 - [x] Select and implement the approximate-area Work map direction.
 - [x] Add privacy-preserving approximate coordinates and uncertainty radii.
 - [x] Implement map/list synchronization, opt-in distance sorting, map failure

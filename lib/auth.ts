@@ -51,6 +51,7 @@ export async function authenticateRequest(
       username: validated.user.username?.slice(0, 64),
       displayName,
       photoUrl: validated.user.photo_url?.slice(0, 1024),
+      city: "",
     })
     .onConflictDoUpdate({
       target: users.telegramId,

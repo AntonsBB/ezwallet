@@ -97,6 +97,10 @@ provider query that finds no matching finalized message.
   payment references, and replayed proof nonces.
 - Saved listing rows are scoped to the authenticated Telegram user on every
   read and mutation; the browser cannot choose a different profile.
+- Listing lifecycle mutations are owner-scoped, follow an explicit transition
+  matrix, use a compare-and-set update to reject concurrent changes, and never
+  delete the historical row. A paused or closed post disappears from public
+  discovery without rewriting an existing deal.
 - Deal events and ledger entries are append-only.
 - Prepared and submitted chain actions are durable and idempotently reconciled.
 - Listing edits never rewrite a previously accepted quote.

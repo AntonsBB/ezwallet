@@ -54,10 +54,11 @@ export default function PrivacyPage() {
         <h2>Your choices</h2>
         <p>
           You may edit profile information, add or remove saved listings,
-          disconnect your wallet, use the Work list without sharing an area,
-          remove an attached approximate area before publishing, and ask for
-          deletion where applicable. Some deal, moderation, and public
-          blockchain records must be retained or cannot be erased.
+          pause, reactivate, or close your listings, disconnect your wallet, use
+          the Work list without sharing an area, remove an attached approximate
+          area before publishing, and ask for deletion where applicable. Some
+          deal, moderation, and public blockchain records must be retained or
+          cannot be erased.
         </p>
       </section>
     </main>

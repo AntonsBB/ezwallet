@@ -69,7 +69,8 @@ coordinates are not published in a listing.
 
 1. Create a Market listing, service, or job.
 2. Upload supported images and provide a realistic description, price/budget, delivery method, and location.
-3. Publish, pause, edit, or close the post.
+3. Publish, pause, reactivate, or permanently close the post. Editing remains a
+   separate release item.
 4. Manage applications and active deals from Profile.
 
 ### Wallet
