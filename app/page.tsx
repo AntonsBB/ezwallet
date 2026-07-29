@@ -13,7 +13,7 @@ export default async function Home() {
     (host?.includes("localhost") ? "http" : "https");
   const fallbackOrigin = host
     ? `${protocol}://${host}`
-    : "https://easywallet.abbrains.xyz";
+    : "https://easywallet.rexai.world";
   const origin = canonicalAppOrigin(fallbackOrigin);
 
   return (

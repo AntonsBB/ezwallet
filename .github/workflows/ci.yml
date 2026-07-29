@@ -34,6 +34,7 @@ jobs:
       - run: npm install --global npm@11.6.2
       - run: npm ci
       - run: npm run test:unit
+      - run: npm run types:cloudflare:check
       - run: npm run lint
       - run: npm run cloudflare:check
       - run: npm audit --omit=dev --audit-level=high

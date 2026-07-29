@@ -19,7 +19,6 @@ const localVariableNames = [
   "TONCENTER_API_KEY",
   "RECONCILE_SECRET",
   "ENVIRONMENT",
-  "SEED_DEMO_DATA",
 ] as const;
 const localVars = Object.fromEntries(
   localVariableNames.flatMap((name) => {

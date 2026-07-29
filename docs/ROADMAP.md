@@ -20,24 +20,24 @@ funds, external promotion, bot deletion, or unattended account changes.
 - [x] Prevent duplicate active deals and duplicate pending chain actions.
 - [x] Add adversarial hash-encoding, address-normalization, and terminal-payout
   verification tests.
-- [x] Add mocked TON Center response, replay, pinned-state, emulation, and
-  provider-outage tests.
+- [x] Add adversarial TON Center response, replay, pinned-state, emulation, and
+  provider-outage verification tests.
 - [ ] Run a second independent contract/security review.
 - [ ] Complete two-party testnet settlement and dispute drills.
 
 ## 2. Stable Cloudflare production environment
 
-- [x] Define the exact Worker, static asset, D1, private R2, cron, observability,
+- [x] Define the exact Worker, static asset, D1, private KV media, cron, observability,
   and custom-domain configuration.
 - [x] Verify a production build and Wrangler upload dry-run.
 - [x] Verify all D1 migrations against a fresh database.
-- [ ] Restore Cloudflare authorization.
-- [ ] Enable R2 and create the private `easy-wallet-media` bucket.
+- [x] Restore Cloudflare authorization.
+- [x] Create and bind the free `production-easy-wallet-media` KV namespace.
 - [ ] Apply the remote D1 migrations.
 - [ ] Configure encrypted Telegram, webhook, reconciler, and TON Center secrets.
 - [ ] Configure reviewed testnet platform and arbitrator addresses.
 - [ ] Remove the old CNAME and deploy the Worker custom domain.
-- [ ] Verify TLS, security headers, manifest, webhook, cron, D1, R2, and rollback.
+- [ ] Verify TLS, security headers, manifest, webhook, cron, D1, KV, and rollback.
 
 ## 3. Dedicated Telegram identity
 

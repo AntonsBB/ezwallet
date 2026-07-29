@@ -14,8 +14,9 @@ export default function TermsPage() {
         <p>
           Easy Wallet is a Telegram marketplace that helps people publish
           listings, apply for work, create deal records, and prepare
-          non-custodial TON transfers. Easy Wallet is not a bank, exchange,
-          escrow service, employer, tax adviser, or wallet custodian.
+          non-custodial TON smart-contract escrows. Easy Wallet provides escrow
+          software but does not custody wallet keys or user funds and is not a
+          bank, exchange, employer, or tax adviser.
         </p>
       </section>
       <section>
@@ -44,8 +45,9 @@ export default function TermsPage() {
         <p>
           Users remain responsible for the underlying agreement. Easy Wallet may
           preserve deal evidence, restrict accounts, remove listings, and
-          cooperate with lawful requests. A report or dispute does not reverse
-          an on-chain transfer.
+          cooperate with lawful requests. Opening a dispute before settlement
+          freezes the contract until the configured arbitrator signs a release
+          or refund; a completed on-chain settlement is generally irreversible.
         </p>
       </section>
       <section>

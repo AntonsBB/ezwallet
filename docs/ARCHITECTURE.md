@@ -5,7 +5,8 @@
 - Telegram Mini App frontend: React, TypeScript, and a responsive app shell.
 - Edge API and Telegram webhook: Cloudflare Worker.
 - Relational data: Cloudflare D1 with tracked SQL migrations.
-- Listing media: Cloudflare R2 with size/type validation and unguessable object keys.
+- Listing media: Cloudflare Workers KV with size/type validation, immutable
+  values, and unguessable object keys.
 - Wallet integration: TON Connect in the browser plus server-side TON proof verification.
 - Escrow: one deterministic native-TON contract per deal, compiled from
   Acton/Tolk and deployed atomically with buyer funding.
@@ -32,7 +33,7 @@ Deal escrow
 
 Worker
   ├─ prepared statements ──> D1
-  ├─ validated media ──> R2
+  ├─ validated media ──> Workers KV
   ├─ Bot API calls ──> Telegram
   └─ payment observation ──> TON provider
 ```
@@ -44,11 +45,13 @@ Untrusted inputs include Telegram request bodies, Mini App init data before vali
 1. The frontend posts raw `Telegram.WebApp.initData`.
 2. The Worker verifies the official HMAC data-check string and a short `auth_date` window.
 3. The Worker upserts the Telegram profile.
-4. A cryptographically random opaque session token is returned as a secure, HTTP-only, same-origin cookie.
-5. D1 stores only a SHA-256 hash of the session token.
-6. Mutating requests require the session, the expected request origin, and a per-session CSRF value.
+4. Every authenticated API request carries the signed launch data in a custom
+   header and is revalidated server-side.
+5. The one-hour freshness window limits replay and requires users to relaunch
+   the Mini App when their Telegram launch proof expires.
 
-Local demo authentication is restricted to loopback/preview hosts and cannot be enabled by a public request header in production.
+There is no localhost bypass, demo user, password, bearer token, or long-lived
+application session.
 
 ## Wallet binding
 

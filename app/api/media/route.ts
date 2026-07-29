@@ -1,4 +1,4 @@
-import { getMediaBucket } from "@/db";
+import { getMediaStore } from "@/db";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
 import {
   enforceRateLimit,
@@ -37,9 +37,11 @@ export async function POST(request: Request) {
       );
     }
     const key = `listing-media/${user.id}/${crypto.randomUUID()}.${extension}`;
-    await getMediaBucket().put(key, file.stream(), {
-      httpMetadata: { contentType: file.type, cacheControl: "public, max-age=86400" },
-      customMetadata: { ownerId: String(user.id) },
+    await getMediaStore().put(key, await file.arrayBuffer(), {
+      metadata: {
+        contentType: file.type,
+        ownerId: String(user.id),
+      },
     });
     return noStoreJson({ key, url: `/api/media/${key}` }, { status: 201 });
   } catch (error) {

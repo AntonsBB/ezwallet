@@ -1808,12 +1808,6 @@ export default function EzWalletApp() {
         session.walletVerifiedAt
     );
 
-  const isLocalPreview =
-    typeof window !== "undefined" &&
-    ["localhost", "127.0.0.1", "terminal.local"].includes(
-      window.location.hostname
-    );
-
   const telegramWebApp =
     typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
   const initData = telegramWebApp?.initData ?? "";
@@ -1823,15 +1817,12 @@ export default function EzWalletApp() {
     (path: string, options: RequestInit = {}) => {
       const headers = new Headers(options.headers);
       if (initData) headers.set("x-telegram-init-data", initData);
-      if (!initData && isLocalPreview) {
-        headers.set("x-ezwallet-demo", "local-preview");
-      }
       if (options.body && !(options.body instanceof FormData)) {
         headers.set("content-type", "application/json");
       }
       return fetch(path, { ...options, headers });
     },
-    [initData, isLocalPreview]
+    [initData]
   );
 
   const showToast = useCallback(
@@ -1854,7 +1845,7 @@ export default function EzWalletApp() {
   }, []);
 
   const loadSession = useCallback(async () => {
-    if (!initData && !isLocalPreview) return;
+    if (!initData) return;
     const response = await apiFetch("/api/session", { method: "POST" });
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
@@ -1873,7 +1864,7 @@ export default function EzWalletApp() {
       };
       setApplications(applicationsData.applications);
     }
-  }, [apiFetch, initData, isLocalPreview]);
+  }, [apiFetch, initData]);
 
   useEffect(() => {
     telegram?.ready();

@@ -1,13 +1,11 @@
 import { desc, eq } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
-import { ensureDatabase } from "@/db/init";
 import { listings, users } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    await ensureDatabase();
     const db = getDb();
     const rows = await db
       .select({

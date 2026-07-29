@@ -17,7 +17,8 @@ It is intentionally non-custodial:
   verifies the escrow code, state, sender, exact amount, and message before the
   deal advances.
 - D1 stores marketplace state and an append-only deal/ledger event history.
-- R2 stores user-uploaded listing images behind a constrained media route.
+- Workers KV stores immutable user-uploaded listing images behind a constrained
+  media route.
 
 The product and trust-boundary specifications live in
 [`docs/PRODUCT.md`](docs/PRODUCT.md) and
@@ -44,7 +45,7 @@ and civic voting are deliberately outside this release.
 - React 19, Next 16 App Router, Vinext, TypeScript
 - Cloudflare Workers and Static Assets
 - Cloudflare D1 with Drizzle
-- Cloudflare R2
+- Cloudflare Workers KV
 - Telegram Mini Apps and Bot API
 - TON Connect UI, TON proof, TON Center v2/v3
 - Acton/Tolk native-TON escrow contract
@@ -59,9 +60,9 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Open the printed local URL. Localhost permits a demo Telegram profile so the UI
-can be reviewed without weakening deployed authentication. Wallet verification
-still requires a real activated TON testnet wallet.
+Open the printed local URL to review the public product surface. Authenticated
+actions require genuine, server-verified Telegram Mini App launch data; there
+is no demo identity or seeded marketplace data.
 
 Useful commands:
 
@@ -76,32 +77,32 @@ npm test
 ## Cloudflare deployment
 
 `wrangler.jsonc` defines the testnet production Worker, the
-`easywallet.abbrains.xyz` custom domain, the `easy-wallet-production` D1
-database, the private `easy-wallet-media` R2 bucket, and the two-minute
+`easywallet.rexai.world` custom domain, the `easy-wallet-production` D1
+database, the `production-easy-wallet-media` KV namespace, and the two-minute
 reconciler. Build and validate the exact deploy artifact with:
 
 ```bash
 npm run cloudflare:check
 ```
 
-After Cloudflare authentication, create the R2 bucket, apply the checked-in D1
-migrations, configure the secret bindings, and deploy:
+After Cloudflare authentication, create the KV namespace, apply the checked-in
+D1 migrations, configure the secret bindings, and deploy:
 
 ```bash
-npx wrangler r2 bucket create easy-wallet-media
+npx wrangler kv namespace create easy-wallet-media --binding MEDIA --env production
 npm run db:migrate:production
 npm run deploy:production
 ```
 
-The existing CNAME at `easywallet.abbrains.xyz` must be removed immediately
-before the Worker custom-domain deployment; Cloudflare then creates and manages
-the replacement DNS record and certificate.
+The Worker custom-domain deployment creates and manages the
+`easywallet.rexai.world` DNS record and certificate. Confirm that the hostname
+is unused before deploying so an unrelated record is never overwritten.
 
 Set these runtime bindings before enabling payments:
 
 | Binding | Required | Purpose |
 | --- | --- | --- |
-| `ENVIRONMENT=production` | yes | disables demo seeding |
+| `ENVIRONMENT=production` | yes | identifies the production runtime in logs and guards |
 | `TON_NETWORK=testnet` | yes at first | use `mainnet` only after testnet sign-off |
 | `PLATFORM_FEE_ADDRESS` | yes | receives the exact 1% fee from each party after settlement |
 | `ESCROW_ARBITRATOR_ADDRESS` | yes | wallet allowed to resolve a disputed on-chain escrow |

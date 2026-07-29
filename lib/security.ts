@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { rateLimits } from "@/db/schema";
 
@@ -32,37 +32,32 @@ export async function enforceRateLimit(
 ) {
   const db = getDb();
   const now = new Date();
+  const nowIso = now.toISOString();
   const resetAt = new Date(now.getTime() + windowSeconds * 1000).toISOString();
   const key = `${scope}:${userId}`;
   const [current] = await db
-    .select()
-    .from(rateLimits)
-    .where(
-      and(eq(rateLimits.key, key), gt(rateLimits.resetAt, now.toISOString()))
-    )
-    .limit(1);
+    .insert(rateLimits)
+    .values({ key, count: 1, resetAt })
+    .onConflictDoUpdate({
+      target: rateLimits.key,
+      set: {
+        count: sql`CASE WHEN ${rateLimits.resetAt} <= ${nowIso} THEN 1 ELSE ${rateLimits.count} + 1 END`,
+        resetAt: sql`CASE WHEN ${rateLimits.resetAt} <= ${nowIso} THEN ${resetAt} ELSE ${rateLimits.resetAt} END`,
+      },
+    })
+    .returning({
+      count: rateLimits.count,
+      resetAt: rateLimits.resetAt,
+    });
 
   if (!current) {
-    await db
-      .insert(rateLimits)
-      .values({ key, count: 1, resetAt })
-      .onConflictDoUpdate({
-        target: rateLimits.key,
-        set: { count: 1, resetAt },
-      });
-    return;
+    throw new Error("Rate limit counter could not be updated.");
   }
-
-  if (current.count >= limit) {
+  if (current.count > limit) {
     throw new RateLimitError(
       Math.max(1, Math.ceil((Date.parse(current.resetAt) - now.getTime()) / 1000))
     );
   }
-
-  await db
-    .update(rateLimits)
-    .set({ count: sql`${rateLimits.count} + 1` })
-    .where(eq(rateLimits.key, key));
 }
 
 export class RateLimitError extends Error {

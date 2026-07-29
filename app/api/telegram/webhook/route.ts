@@ -30,12 +30,19 @@ export async function POST(request: Request) {
   const update = (await request.json()) as TelegramUpdate;
   const chatId = update.message?.chat?.id;
   const text = update.message?.text ?? "";
-  if (!chatId || !text.startsWith("/start")) {
+  const command = text.split(/\s+/, 1)[0]?.split("@", 1)[0]?.toLowerCase();
+  if (!chatId || !["/start", "/help", "/safety"].includes(command)) {
     return Response.json({ ok: true });
   }
 
   const appUrl = getBinding("MINI_APP_URL") ?? new URL(request.url).origin;
   const firstName = update.message?.from?.first_name?.slice(0, 64) ?? "there";
+  const message =
+    command === "/safety"
+      ? "Easy Wallet never needs your recovery phrase or private key. Check every recipient and amount in your wallet before approving, and keep deals inside the app so the escrow state can be verified."
+      : command === "/help"
+        ? "Use Market for goods and Work for local services. Connect your own TON wallet, agree the deal terms, and approve each testnet transaction in your wallet. Easy Wallet never takes custody of your keys."
+        : `Hi ${firstName} — welcome to Easy Wallet. Buy, sell and find local work using your own TON wallet. The public launch is currently on TON testnet.`;
   const response = await fetch(
     `https://api.telegram.org/bot${botToken}/sendMessage`,
     {
@@ -43,7 +50,7 @@ export async function POST(request: Request) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `Hi ${firstName} — welcome to Easy Wallet. Buy, sell, work and pay with your own TON wallet.`,
+        text: message,
         reply_markup: {
           inline_keyboard: [
             [

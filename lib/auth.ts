@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
-import { ensureDatabase } from "@/db/init";
 import { users } from "@/db/schema";
 import { noStoreJson } from "./security";
 import { validateTelegramInitData } from "./telegram";
@@ -17,29 +16,10 @@ export class AuthenticationError extends Error {
   }
 }
 
-function isLocalPreview(request: Request) {
-  const hostname = new URL(request.url).hostname;
-  return (
-    request.headers.get("x-ezwallet-demo") === "local-preview" &&
-    (hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "terminal.local")
-  );
-}
-
 export async function authenticateRequest(
   request: Request
 ): Promise<AuthenticatedUser> {
-  await ensureDatabase();
   const db = getDb();
-
-  if (isLocalPreview(request)) {
-    const [demoUser] = await db.select().from(users).where(eq(users.id, 1)).limit(1);
-    if (!demoUser) {
-      throw new AuthenticationError("Local preview user is unavailable.");
-    }
-    return demoUser;
-  }
 
   const botToken = getBinding("TELEGRAM_BOT_TOKEN");
   if (!botToken) {

@@ -5,7 +5,7 @@ import * as schema from "./schema";
 function bindings() {
   return env as typeof env & {
     DB?: D1Database;
-    MEDIA?: R2Bucket;
+    MEDIA?: KVNamespace;
     TELEGRAM_BOT_TOKEN?: string;
     TELEGRAM_BOT_USERNAME?: string;
     TELEGRAM_WEBHOOK_SECRET?: string;
@@ -17,7 +17,6 @@ function bindings() {
     TONCENTER_API_KEY?: string;
     RECONCILE_SECRET?: string;
     ENVIRONMENT?: string;
-    SEED_DEMO_DATA?: string;
   };
 }
 
@@ -32,8 +31,7 @@ type StringBindingName =
   | "TON_NETWORK"
   | "TONCENTER_API_KEY"
   | "RECONCILE_SECRET"
-  | "ENVIRONMENT"
-  | "SEED_DEMO_DATA";
+  | "ENVIRONMENT";
 
 export function getBinding(name: StringBindingName) {
   const value = bindings()[name];
@@ -50,14 +48,14 @@ export function getD1() {
   return database;
 }
 
-export function getMediaBucket() {
-  const bucket = bindings().MEDIA;
-  if (!bucket) {
+export function getMediaStore() {
+  const store = bindings().MEDIA;
+  if (!store) {
     throw new Error(
-      "Cloudflare R2 binding `MEDIA` is unavailable. Set the `r2` field in .openai/hosting.json to `MEDIA`."
+      "Cloudflare KV binding `MEDIA` is unavailable."
     );
   }
-  return bucket;
+  return store;
 }
 
 export function getDb() {

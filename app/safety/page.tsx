@@ -26,20 +26,22 @@ export default function SafetyPage() {
         </p>
       </section>
       <section>
-        <h2>Payments are not escrowed</h2>
+        <h2>Payments use per-deal escrow</h2>
         <p>
-          Funds go directly from the buyer to the seller and fee wallet.
-          Easy Wallet independently checks the expected finalized transfers but
-          cannot reverse them. Do not approve a transfer based only on a chat
-          message or screenshot.
+          The buyer funds a deterministic TON smart contract whose seller,
+          buyer, fee recipient, arbitrator, amount, and deadlines are fixed for
+          that deal. Easy Wallet independently verifies the deployed code,
+          contract state, funding, and final payouts on-chain. Never approve a
+          transaction based only on a chat message or screenshot.
         </p>
       </section>
       <section>
         <h2>Report and dispute</h2>
         <p>
-          Report suspicious listings from the listing sheet. For a paid deal,
-          choose “Report a problem” in Wallet activity so the deal is preserved
-          for review. In immediate danger, contact local emergency services.
+          Report suspicious listings from the listing sheet. For a funded deal,
+          use “Open dispute” in Wallet activity before settlement; the contract
+          then allows only the configured arbitrator to release or refund the
+          escrow. In immediate danger, contact local emergency services.
         </p>
       </section>
     </main>

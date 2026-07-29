@@ -1,4 +1,15 @@
-import { getMediaBucket } from "@/db";
+import { getMediaStore } from "@/db";
+
+type MediaMetadata = {
+  contentType?: string;
+  ownerId?: string;
+};
+
+const allowedContentTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 export async function GET(
   request: Request,
@@ -11,12 +22,20 @@ export async function GET(
   ) {
     return new Response("Not found.", { status: 404 });
   }
-  const object = await getMediaBucket().get(key);
-  if (!object) return new Response("Not found.", { status: 404 });
+  const object = await getMediaStore().getWithMetadata<MediaMetadata>(
+    key,
+    "arrayBuffer"
+  );
+  if (!object.value) return new Response("Not found.", { status: 404 });
   const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
+  const contentType = object.metadata?.contentType;
+  headers.set(
+    "content-type",
+    contentType && allowedContentTypes.has(contentType)
+      ? contentType
+      : "application/octet-stream"
+  );
   headers.set("x-content-type-options", "nosniff");
-  headers.set("cache-control", "public, max-age=86400");
-  return new Response(object.body, { headers });
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(object.value, { headers });
 }
