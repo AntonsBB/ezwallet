@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { listings } from "@/db/schema";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
 import { tonToNano } from "@/lib/format";
+import { normalizePublicCoordinates } from "@/lib/geo";
 import {
   enforceRateLimit,
   RateLimitError,
@@ -19,6 +20,9 @@ const listingSchema = z
     category: z.string().trim().min(2).max(40),
     priceTon: z.string().trim(),
     location: z.string().trim().min(2).max(80),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    locationRadiusMeters: z.number().int().min(250).max(100_000).optional(),
     delivery: z.string().trim().min(2).max(80),
     mediaKey: z
       .string()
@@ -37,6 +41,16 @@ const listingSchema = z
         message: "Listing type does not match its section.",
       });
     }
+    if (
+      (value.latitude === undefined) !==
+      (value.longitude === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["latitude"],
+        message: "Latitude and longitude must be provided together.",
+      });
+    }
   });
 
 export const dynamic = "force-dynamic";
@@ -51,6 +65,11 @@ export async function POST(request: Request) {
     }
     const payload = listingSchema.parse(await request.json());
     const priceNano = tonToNano(payload.priceTon);
+    const publicLocation = normalizePublicCoordinates({
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      radiusMeters: payload.locationRadiusMeters,
+    });
     if (BigInt(priceNano) < 1_000_000n) {
       return Response.json(
         { error: "The minimum listing price is 0.001 TON." },
@@ -77,6 +96,9 @@ export async function POST(request: Request) {
       category: payload.category,
       priceNano,
       location: payload.location,
+      latitudeE6: publicLocation?.latitudeE6 ?? null,
+      longitudeE6: publicLocation?.longitudeE6 ?? null,
+      locationRadiusMeters: publicLocation?.radiusMeters ?? null,
       delivery: payload.delivery,
       imageUrl: payload.mediaKey ? `/api/media/${payload.mediaKey}` : null,
       mediaKey: payload.mediaKey ?? null,

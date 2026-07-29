@@ -55,6 +55,9 @@ export const listings = sqliteTable(
     imageUrl: text("image_url"),
     mediaKey: text("media_key"),
     location: text("location").notNull().default("Remote"),
+    latitudeE6: integer("latitude_e6"),
+    longitudeE6: integer("longitude_e6"),
+    locationRadiusMeters: integer("location_radius_meters"),
     delivery: text("delivery").notNull().default("Arrange in chat"),
     status: text("status", {
       enum: ["draft", "active", "paused", "sold", "closed", "removed"],
@@ -71,6 +74,12 @@ export const listings = sqliteTable(
   },
   (table) => [
     index("listings_section_status_idx").on(table.section, table.status),
+    index("listings_geo_idx").on(
+      table.section,
+      table.status,
+      table.latitudeE6,
+      table.longitudeE6
+    ),
     index("listings_owner_idx").on(table.ownerId),
   ]
 );

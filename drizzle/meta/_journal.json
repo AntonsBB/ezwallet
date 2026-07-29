@@ -29,6 +29,13 @@
       "when": 1785321000000,
       "tag": "0003_native_ton_escrow",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1785325000000,
+      "tag": "0004_geospatial_discovery",
+      "breakpoints": true
     }
   ]
 }

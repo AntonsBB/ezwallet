@@ -59,6 +59,9 @@ type Listing = {
   currency: string;
   imageUrl: string | null;
   location: string;
+  latitudeE6: number | null;
+  longitudeE6: number | null;
+  locationRadiusMeters: number | null;
   delivery: string;
   status: string;
   createdAt: string;

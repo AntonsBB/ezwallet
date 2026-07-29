@@ -32,6 +32,9 @@ const schemaStatements = [
     image_url TEXT,
     media_key TEXT,
     location TEXT NOT NULL DEFAULT 'Remote',
+    latitude_e6 INTEGER,
+    longitude_e6 INTEGER,
+    location_radius_meters INTEGER,
     delivery TEXT NOT NULL DEFAULT 'Arrange in chat',
     status TEXT NOT NULL DEFAULT 'active',
     moderation_status TEXT NOT NULL DEFAULT 'approved',
@@ -399,12 +402,32 @@ export async function ensureDatabase() {
   for (const [, statement] of missingDealColumns) {
     await database.prepare(statement).run();
   }
+  const listingColumns = await database
+    .prepare("PRAGMA table_info(listings)")
+    .all<{ name: string }>();
+  const existingListingColumns = new Set(
+    listingColumns.results.map((column) => column.name)
+  );
+  const missingListingColumns = [
+    ["latitude_e6", "ALTER TABLE listings ADD latitude_e6 INTEGER"],
+    ["longitude_e6", "ALTER TABLE listings ADD longitude_e6 INTEGER"],
+    [
+      "location_radius_meters",
+      "ALTER TABLE listings ADD location_radius_meters INTEGER",
+    ],
+  ].filter(([name]) => !existingListingColumns.has(name));
+  for (const [, statement] of missingListingColumns) {
+    await database.prepare(statement).run();
+  }
   await database.batch([
     database.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS deals_escrow_address_idx ON deals(escrow_address)"
     ),
     database.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS deals_listing_active_idx ON deals(listing_id) WHERE status IN ('pending_wallet', 'payment_submitted', 'awaiting_delivery', 'disputed')"
+    ),
+    database.prepare(
+      "CREATE INDEX IF NOT EXISTS listings_geo_idx ON listings(section, status, latitude_e6, longitude_e6)"
     ),
     database.prepare(
       "CREATE INDEX IF NOT EXISTS deal_chain_actions_deal_idx ON deal_chain_actions(deal_id, created_at)"

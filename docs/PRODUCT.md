@@ -61,6 +61,10 @@ The production interface keeps the source identity while removing the old presen
 3. The owner accepts one application and the system creates a deal.
 4. Payment, delivery/proof, completion, dispute, and review follow the same auditable deal lifecycle.
 
+Map discovery uses approximate public coordinates rounded to roughly a
+neighborhood block plus a declared radius. Exact home, workplace, or live device
+coordinates are not published in a listing.
+
 ### Sell or hire
 
 1. Create a Market listing, service, or job.
