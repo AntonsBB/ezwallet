@@ -57,6 +57,11 @@ Open the printed local URL. Localhost permits a demo Telegram profile so the UI
 can be reviewed without weakening deployed authentication. Wallet verification
 still requires a real activated TON testnet wallet.
 
+For a temporary HTTPS tunnel, set `EZWALLET_PREVIEW_HOST` to the tunnel's exact
+hostname (for example, `example.ngrok-free.app`). The development server only
+accepts that configured host; do not use a wildcard. Set the Telegram runtime
+variables in the same process that starts `npm run dev`.
+
 Useful commands:
 
 ```bash
