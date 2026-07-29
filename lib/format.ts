@@ -1,0 +1,33 @@
+export const NANO_PER_TON = 1_000_000_000n;
+export const PLATFORM_FEE_BPS = 100n;
+export const BPS_DENOMINATOR = 10_000n;
+
+export function tonToNano(input: string) {
+  const normalized = input.trim();
+  if (!/^\d{1,7}(?:\.\d{1,9})?$/.test(normalized)) {
+    throw new Error("Enter a valid TON amount.");
+  }
+  const [whole, fraction = ""] = normalized.split(".");
+  return (
+    BigInt(whole) * NANO_PER_TON +
+    BigInt(fraction.padEnd(9, "0"))
+  ).toString();
+}
+
+export function nanoToTon(input: string, maximumFractionDigits = 2) {
+  const value = BigInt(input);
+  const whole = value / NANO_PER_TON;
+  const fraction = (value % NANO_PER_TON).toString().padStart(9, "0");
+  const trimmed = fraction.slice(0, maximumFractionDigits).replace(/0+$/, "");
+  return trimmed ? `${whole}.${trimmed}` : whole.toString();
+}
+
+export function splitPlatformFee(grossNano: bigint) {
+  const platformFeeNano =
+    (grossNano * PLATFORM_FEE_BPS + BPS_DENOMINATOR - 1n) /
+    BPS_DENOMINATOR;
+  return {
+    platformFeeNano,
+    sellerAmountNano: grossNano - platformFeeNano,
+  };
+}

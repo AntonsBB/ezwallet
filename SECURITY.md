@@ -1,0 +1,47 @@
+# Security policy
+
+EzWallet handles marketplace identity, user-generated content, and non-custodial cryptocurrency payment metadata. Security reports are welcome.
+
+## Reporting a vulnerability
+
+Please do not open a public issue for an exploitable vulnerability or include real user data, bot tokens, wallet secrets, or private keys in a report.
+
+Until a dedicated security address is published, use GitHub's private vulnerability reporting feature for this repository.
+
+Include:
+
+- affected route or component;
+- reproducible steps;
+- expected and actual behavior;
+- security impact;
+- a minimal proof of concept using test accounts and TON testnet where possible.
+
+## Scope
+
+High-priority areas include:
+
+- Telegram Mini App init-data validation or replay;
+- session fixation, CSRF, authorization, or IDOR;
+- TON proof validation or wallet/account substitution;
+- payment amount, recipient, fee, network, or status manipulation;
+- duplicate or replayed deals and transactions;
+- SQL injection or unsafe query construction;
+- unrestricted uploads, stored XSS, content-sniffing, or object access;
+- Telegram webhook spoofing;
+- secret exposure;
+- moderation/reporting bypasses.
+
+## Safe-harbor expectations
+
+Use only accounts and wallets you own or have explicit permission to test. Do not degrade availability, access other users' private data, move real funds, spam Telegram users, or test against mainnet when testnet can demonstrate the issue.
+
+## Supported versions
+
+Only the latest production deployment and the default branch receive security updates before the first stable release.
+
+## Security model
+
+- EzWallet is non-custodial and never requests seed phrases or private keys.
+- A wallet-signed submission is not considered confirmed payment until independently verified on-chain.
+- Telegram identity and TON wallet ownership are distinct checks.
+- Government-ID, NFC passport, custody, fiat exchange, and tax-reporting systems are not part of the initial public release.
