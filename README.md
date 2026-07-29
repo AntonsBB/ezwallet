@@ -24,7 +24,10 @@ It is intentionally non-custodial:
 The product and trust-boundary specifications live in
 [`docs/PRODUCT.md`](docs/PRODUCT.md) and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The ordered launch gates and
-remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+remaining work are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md). The exact
+external payment gates are documented in
+[`docs/TESTNET-DRILL.md`](docs/TESTNET-DRILL.md) and
+[`docs/CONTRACT-REVIEW-HANDOFF.md`](docs/CONTRACT-REVIEW-HANDOFF.md).
 
 ## Product surface
 
@@ -127,6 +130,11 @@ Do not enable mainnet until all participants can verify mainnet wallets, the fee
 and arbitrator addresses are reviewed out-of-band, the escrow contract has an
 independent security review, the reconciler has passed testnet failure/replay
 tests, and operational moderation is staffed.
+
+`paymentsReady` is fail-closed: the platform wallet, arbitrator wallet, and
+authorized arbitrator Telegram ID must all be present and syntactically valid,
+and the two configured wallet roles must be distinct. The public bootstrap API
+returns only safe blocker codes, never configured addresses or operator IDs.
 
 ## Telegram setup
 

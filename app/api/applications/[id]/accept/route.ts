@@ -1,4 +1,3 @@
-import { Address } from "@ton/core";
 import { and, eq, inArray } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
 import {
@@ -12,6 +11,11 @@ import {
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
 import { calculateTransactionFees } from "@/lib/format";
 import {
+  inspectPaymentConfiguration,
+  normalizeTonAddress,
+} from "@/lib/payment-configuration";
+import { paymentReadinessMessage } from "@/lib/payment-readiness";
+import {
   buildNativeTonEscrow,
   DEFAULT_DELIVERY_WINDOW_SECONDS,
 } from "@/lib/ton-escrow";
@@ -21,10 +25,6 @@ import {
   RateLimitError,
   rateLimitResponse,
 } from "@/lib/security";
-
-function normalizeAddress(value: string, testnet: boolean) {
-  return Address.parse(value).toString({ bounceable: false, testOnly: testnet });
-}
 
 function isActiveDealConflict(error: unknown) {
   const message =
@@ -104,28 +104,35 @@ export async function POST(
         { status: 409 }
       );
     }
-    const feeAddress = getBinding("PLATFORM_FEE_ADDRESS");
-    const arbitratorAddress = getBinding("ESCROW_ARBITRATOR_ADDRESS");
-    if (!feeAddress || !arbitratorAddress) {
+    const paymentConfiguration = inspectPaymentConfiguration({
+      network,
+      platformFeeAddress: getBinding("PLATFORM_FEE_ADDRESS"),
+      arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
+      arbitratorTelegramId: getBinding("ESCROW_ARBITRATOR_TELEGRAM_ID"),
+    });
+    if (!paymentConfiguration.ready) {
       return noStoreJson(
         {
-          error:
-            "Payments are paused until the fee and escrow arbitrator wallets are configured.",
+          error: paymentReadinessMessage(
+            paymentConfiguration.blockers,
+            network
+          ),
         },
         { status: 503 }
       );
     }
 
-    const buyerWalletAddress = normalizeAddress(buyer.walletAddress, testnet);
-    const sellerWalletAddress = normalizeAddress(
+    const buyerWalletAddress = normalizeTonAddress(
+      buyer.walletAddress,
+      network
+    );
+    const sellerWalletAddress = normalizeTonAddress(
       application.sellerWalletAddress,
-      testnet
+      network
     );
-    const platformWalletAddress = normalizeAddress(feeAddress, testnet);
-    const arbitratorWalletAddress = normalizeAddress(
-      arbitratorAddress,
-      testnet
-    );
+    const platformWalletAddress = paymentConfiguration.platformWalletAddress;
+    const arbitratorWalletAddress =
+      paymentConfiguration.arbitratorWalletAddress;
     const [existing] = await db
       .select({ id: deals.id })
       .from(deals)

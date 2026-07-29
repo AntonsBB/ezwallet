@@ -53,6 +53,10 @@ import { calculateTransactionFees, nanoToTon } from "@/lib/format";
 import { normalizePublicCoordinates } from "@/lib/geo";
 import { marketCategoryOptions } from "@/lib/listing-categories";
 import {
+  paymentReadinessMessage,
+  type PaymentBlocker,
+} from "@/lib/payment-readiness";
+import {
   activeMarketFilterCount,
   defaultMarketFilterForm,
   filterAndSortMarketListings,
@@ -193,6 +197,7 @@ type AppConfig = {
   feeBps: number;
   network: "mainnet" | "testnet";
   paymentsReady: boolean;
+  paymentBlockers: PaymentBlocker[];
   telegramReady: boolean;
 };
 
@@ -1115,6 +1120,8 @@ function WalletScreen({
   walletConnected,
   deals,
   network,
+  paymentsReady,
+  paymentBlockers,
   walletVerified,
   currentUserId,
   onConnect,
@@ -1125,6 +1132,8 @@ function WalletScreen({
   walletConnected: boolean;
   deals: Deal[];
   network: "mainnet" | "testnet";
+  paymentsReady: boolean;
+  paymentBlockers: PaymentBlocker[];
   walletVerified: boolean;
   currentUserId?: number;
   onConnect: () => void;
@@ -1166,6 +1175,16 @@ function WalletScreen({
         <p>
           Easy Wallet never stores a seed phrase, private key or spendable balance.
         </p>
+        <div
+          className="form-notice"
+          role="status"
+          aria-label="Escrow payment readiness"
+        >
+          <ShieldCheck size={17} />
+          {paymentsReady
+            ? `${network} escrow is configured. Each deal is still verified independently on TON.`
+            : paymentReadinessMessage(paymentBlockers, network)}
+        </div>
         {walletConnected ? (
           <div className="connected-wallet">
             <ShieldCheck
@@ -2781,6 +2800,11 @@ export default function EzWalletApp() {
     feeBps: 100,
     network: "testnet",
     paymentsReady: false,
+    paymentBlockers: [
+      "platform_wallet_missing",
+      "arbitrator_wallet_missing",
+      "arbitrator_operator_missing",
+    ],
     telegramReady: false,
   });
   const [session, setSession] = useState<User | null>(null);
@@ -3418,7 +3442,10 @@ export default function EzWalletApp() {
       return;
     }
     if (!config.paymentsReady) {
-      showToast("Payments are waiting for the platform fee wallet.", "error");
+      showToast(
+        paymentReadinessMessage(config.paymentBlockers, config.network),
+        "error"
+      );
       return;
     }
 
@@ -3800,6 +3827,8 @@ export default function EzWalletApp() {
               walletConnected={Boolean(wallet)}
               deals={deals}
               network={config.network}
+              paymentsReady={config.paymentsReady}
+              paymentBlockers={config.paymentBlockers}
               walletVerified={walletVerified}
               currentUserId={session?.id}
               onConnect={() => void tonConnectUi.openModal()}

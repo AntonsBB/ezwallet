@@ -1,4 +1,3 @@
-import { Address } from "@ton/core";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getBinding, getDb } from "@/db";
@@ -12,6 +11,11 @@ import {
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
 import { calculateTransactionFees } from "@/lib/format";
 import {
+  inspectPaymentConfiguration,
+  normalizeTonAddress,
+} from "@/lib/payment-configuration";
+import { paymentReadinessMessage } from "@/lib/payment-readiness";
+import {
   buildNativeTonEscrow,
   DEFAULT_DELIVERY_WINDOW_SECONDS,
 } from "@/lib/ton-escrow";
@@ -24,13 +28,6 @@ import {
 const createDealSchema = z.object({
   listingId: z.string().min(1).max(80),
 });
-
-function normalizeAddress(value: string, testnet: boolean) {
-  return Address.parse(value).toString({
-    bounceable: false,
-    testOnly: testnet,
-  });
-}
 
 function isActiveDealConflict(error: unknown) {
   const message =
@@ -111,14 +108,19 @@ export async function POST(request: Request) {
       );
     }
     const testnet = network === "testnet";
-    const feeAddress = getBinding("PLATFORM_FEE_ADDRESS");
-    const arbitratorAddress = getBinding("ESCROW_ARBITRATOR_ADDRESS");
-
-    if (!feeAddress || !arbitratorAddress) {
+    const paymentConfiguration = inspectPaymentConfiguration({
+      network,
+      platformFeeAddress: getBinding("PLATFORM_FEE_ADDRESS"),
+      arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
+      arbitratorTelegramId: getBinding("ESCROW_ARBITRATOR_TELEGRAM_ID"),
+    });
+    if (!paymentConfiguration.ready) {
       return Response.json(
         {
-          error:
-            "Payments are paused until the fee and escrow arbitrator wallets are configured.",
+          error: paymentReadinessMessage(
+            paymentConfiguration.blockers,
+            network
+          ),
         },
         { status: 503 }
       );
@@ -129,16 +131,13 @@ export async function POST(request: Request) {
     let platformWalletAddress: string;
     let arbitratorWalletAddress: string;
     try {
-      buyerWalletAddress = normalizeAddress(
-        buyer.walletAddress,
-        testnet
-      );
-      sellerWalletAddress = normalizeAddress(
+      buyerWalletAddress = normalizeTonAddress(buyer.walletAddress, network);
+      sellerWalletAddress = normalizeTonAddress(
         listing.sellerWalletAddress,
-        testnet
+        network
       );
-      platformWalletAddress = normalizeAddress(feeAddress, testnet);
-      arbitratorWalletAddress = normalizeAddress(arbitratorAddress, testnet);
+      platformWalletAddress = paymentConfiguration.platformWalletAddress;
+      arbitratorWalletAddress = paymentConfiguration.arbitratorWalletAddress;
     } catch {
       return Response.json(
         { error: "One of the TON wallet addresses is invalid." },

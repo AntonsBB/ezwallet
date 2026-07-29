@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
 import { listings, users } from "@/db/schema";
+import { inspectPaymentConfiguration } from "@/lib/payment-configuration";
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +41,14 @@ export async function GET() {
       .where(eq(listings.status, "active"))
       .orderBy(desc(listings.createdAt));
 
-    const hasFeeAddress = Boolean(getBinding("PLATFORM_FEE_ADDRESS"));
-    const hasArbitratorAddress = Boolean(
-      getBinding("ESCROW_ARBITRATOR_ADDRESS")
-    );
+    const network =
+      getBinding("TON_NETWORK") === "mainnet" ? "mainnet" : "testnet";
+    const paymentConfiguration = inspectPaymentConfiguration({
+      network,
+      platformFeeAddress: getBinding("PLATFORM_FEE_ADDRESS"),
+      arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
+      arbitratorTelegramId: getBinding("ESCROW_ARBITRATOR_TELEGRAM_ID"),
+    });
 
     const publicListings = rows.map(
       ({ ownerWalletVerifiedAt, ...listing }) => ({
@@ -56,9 +61,9 @@ export async function GET() {
       listings: publicListings,
       config: {
         feeBps: 100,
-        network:
-          getBinding("TON_NETWORK") === "mainnet" ? "mainnet" : "testnet",
-        paymentsReady: hasFeeAddress && hasArbitratorAddress,
+        network,
+        paymentsReady: paymentConfiguration.ready,
+        paymentBlockers: paymentConfiguration.blockers,
         telegramReady: Boolean(getBinding("TELEGRAM_BOT_TOKEN")),
       },
     });

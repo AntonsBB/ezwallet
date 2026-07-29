@@ -22,6 +22,10 @@ funds, external promotion, bot deletion, or unattended account changes.
   verification tests.
 - [x] Add adversarial TON Center response, replay, pinned-state, emulation, and
   provider-outage verification tests.
+- [x] Publish the funded testnet drill and independent-review handoff with
+  evidence, abort, retest, and exact-role requirements.
+- [x] Make payment readiness validate all operational roles and reject malformed
+  or reused platform/arbitrator configuration.
 - [ ] Run a second independent contract/security review.
 - [ ] Complete two-party testnet settlement and dispute drills.
 

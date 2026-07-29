@@ -82,6 +82,13 @@ source, exact value, and body before advancing the deal. The same rule applies
 to delivery, dispute, release, and refund actions. Terminal settlement is only
 accepted when fixed payouts and contract destruction are observed.
 
+The public payment-readiness gate uses the same configuration validator as both
+deal-creation paths. It requires valid, distinct platform and arbitrator wallet
+roles plus a valid authorized arbitrator Telegram ID. Missing, malformed, or
+reused roles keep checkout disabled and return only non-sensitive blocker
+codes. Buyer and seller addresses are then normalized and all four escrow roles
+are checked for uniqueness again while deriving the individual contract.
+
 Funding and action reconciliation also scans server-prepared records, so a lost
 browser callback does not strand a successful transaction. Stale records expire
 only after their wallet validity window, a safety delay, and a successful
