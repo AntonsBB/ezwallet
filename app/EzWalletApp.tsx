@@ -529,6 +529,7 @@ function MarketScreen({
   onOpen,
   savedListingIds,
   savingListingIds,
+  signedIn,
   savedOnly,
   savedCount,
   favoritesAvailable,
@@ -543,6 +544,7 @@ function MarketScreen({
   onOpen: (listing: Listing) => void;
   savedListingIds: ReadonlySet<string>;
   savingListingIds: ReadonlySet<string>;
+  signedIn: boolean;
   savedOnly: boolean;
   savedCount: number;
   favoritesAvailable: boolean;
@@ -600,7 +602,7 @@ function MarketScreen({
           type="button"
           className={savedOnly ? "is-active" : ""}
           aria-pressed={savedOnly}
-          disabled={!favoritesAvailable}
+          disabled={!signedIn || !favoritesAvailable}
           onClick={onToggleSavedOnly}
         >
           <Heart size={15} fill={savedOnly ? "currentColor" : "none"} />
@@ -608,9 +610,11 @@ function MarketScreen({
           <strong>{savedCount}</strong>
         </button>
         <span>
-          {favoritesAvailable
-            ? "Synced to your Telegram profile"
-            : "Saved listings are unavailable"}
+          {!signedIn
+            ? "Open in Telegram to save listings"
+            : favoritesAvailable
+              ? "Synced to your Telegram profile"
+              : "Saved listings are unavailable"}
         </span>
       </div>
 
@@ -3232,6 +3236,7 @@ export default function EzWalletApp() {
               onOpen={openListing}
               savedListingIds={savedListingSet}
               savingListingIds={favoritePendingSet}
+              signedIn={Boolean(session)}
               savedOnly={marketSavedOnly}
               savedCount={savedMarketCount}
               favoritesAvailable={favoritesAvailable}
