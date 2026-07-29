@@ -26,6 +26,7 @@ async function signedInitData(now: number, token: string) {
   const parameters = new URLSearchParams({
     auth_date: String(now),
     query_id: "AAE-test",
+    signature: "telegram-third-party-signature",
     user: JSON.stringify({
       id: 42,
       first_name: "Anton",
@@ -33,7 +34,7 @@ async function signedInitData(now: number, token: string) {
     }),
   });
   const check = Array.from(parameters.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
   const secret = await hmac(encoder.encode("WebAppData"), token);
@@ -41,7 +42,7 @@ async function signedInitData(now: number, token: string) {
   return parameters.toString();
 }
 
-test("accepts a fresh Telegram Mini App signature", async () => {
+test("accepts fresh Telegram Mini App data with the third-party signature field", async () => {
   const now = 1_800_000_000;
   const result = await validateTelegramInitData(
     await signedInitData(now, "123:secret"),

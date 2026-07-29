@@ -10,10 +10,29 @@ const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
+const publicPreviewHost = process.env.EZWALLET_PREVIEW_HOST?.trim();
+const localVariableNames = [
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_WEBHOOK_SECRET",
+  "MINI_APP_URL",
+  "PLATFORM_FEE_ADDRESS",
+  "TON_NETWORK",
+  "TONCENTER_API_KEY",
+  "RECONCILE_SECRET",
+  "ENVIRONMENT",
+  "SEED_DEMO_DATA",
+] as const;
+const localVars = Object.fromEntries(
+  localVariableNames.flatMap((name) => {
+    const value = process.env[name]?.trim();
+    return value ? [[name, value]] : [];
+  })
+);
 
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  vars: localVars,
   d1_databases: d1
     ? [
         {
@@ -44,9 +63,17 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server:
+      isCodexSeatbeltSandbox || publicPreviewHost
+        ? {
+            ...(isCodexSeatbeltSandbox
+              ? { watch: { useFsEvents: false, usePolling: true } }
+              : {}),
+            ...(publicPreviewHost
+              ? { allowedHosts: [publicPreviewHost] }
+              : {}),
+          }
+        : undefined,
     plugins: [
       vinext(),
       sites(),
