@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getBinding, getDb } from "@/db";
 import {
+  dealFulfillments,
   dealEvents,
   deals,
   ledgerEntries,
@@ -13,6 +14,10 @@ import {
   AuthenticationError,
   authErrorResponse,
 } from "@/lib/auth";
+import {
+  deliveryAddressSchema,
+  encryptDeliveryAddress,
+} from "@/lib/deal-fulfillment";
 import { calculateTransactionFees } from "@/lib/format";
 import {
   inspectPaymentConfiguration,
@@ -20,17 +25,23 @@ import {
 } from "@/lib/payment-configuration";
 import { paymentReadinessMessage } from "@/lib/payment-readiness";
 import {
+  readBoundedTextBody,
+  RequestBodyTooLargeError,
+} from "@/lib/request-body";
+import {
   buildNativeTonEscrow,
   DEFAULT_DELIVERY_WINDOW_SECONDS,
 } from "@/lib/ton-escrow";
 import {
   enforceRateLimit,
+  noStoreJson,
   RateLimitError,
   rateLimitResponse,
 } from "@/lib/security";
 
 const createDealSchema = z.object({
   listingId: z.string().min(1).max(80),
+  deliveryAddress: deliveryAddressSchema.optional(),
 });
 
 function isActiveDealConflict(error: unknown) {
@@ -40,7 +51,8 @@ function isActiveDealConflict(error: unknown) {
       : String(error);
   return (
     message.includes("deals_listing_active_idx") ||
-    message.includes("UNIQUE constraint failed: deals.listing_id")
+    message.includes("UNIQUE constraint failed: deals.listing_id") ||
+    message.includes("deal_listing_not_eligible")
   );
 }
 
@@ -48,13 +60,21 @@ export async function POST(request: Request) {
   try {
     const buyer = await authenticateRequest(request);
     await enforceRateLimit("deal-create", buyer.id, 12, 3600);
-    const payload = createDealSchema.parse(await request.json());
+    const rawBody = await readBoundedTextBody(request, 16_384);
+    let json: unknown;
+    try {
+      json = JSON.parse(rawBody);
+    } catch {
+      return noStoreJson({ error: "Deal request is invalid." }, { status: 400 });
+    }
+    const payload = createDealSchema.parse(json);
     const db = getDb();
     const [listing] = await db
       .select({
         id: listings.id,
         ownerId: listings.ownerId,
         type: listings.type,
+        fulfillmentMode: listings.fulfillmentMode,
         title: listings.title,
         priceNano: listings.priceNano,
         status: listings.status,
@@ -76,22 +96,22 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (!listing) {
-      return Response.json({ error: "Listing not found." }, { status: 404 });
+      return noStoreJson({ error: "Listing not found." }, { status: 404 });
     }
     if (listing.ownerId === buyer.id) {
-      return Response.json(
+      return noStoreJson(
         { error: "You cannot buy your own listing." },
         { status: 400 }
       );
     }
     if (buyer.moderationStatus !== "active") {
-      return Response.json(
+      return noStoreJson(
         { error: "This profile cannot start new deals right now." },
         { status: 403 }
       );
     }
     if (!buyer.walletAddress || !buyer.walletVerifiedAt || !buyer.walletNetwork) {
-      return Response.json(
+      return noStoreJson(
         { error: "Verify your connected TON wallet before starting a deal." },
         { status: 409 }
       );
@@ -101,7 +121,7 @@ export async function POST(request: Request) {
       !listing.sellerWalletVerifiedAt ||
       !listing.sellerWalletNetwork
     ) {
-      return Response.json(
+      return noStoreJson(
         { error: "The seller needs to verify a payout wallet first." },
         { status: 409 }
       );
@@ -110,13 +130,13 @@ export async function POST(request: Request) {
     const network =
       getBinding("TON_NETWORK") === "mainnet" ? "mainnet" : "testnet";
     if (buyer.walletNetwork !== network) {
-      return Response.json(
+      return noStoreJson(
         { error: `Connect and verify a ${network} wallet.` },
         { status: 409 }
       );
     }
     if (listing.sellerWalletNetwork !== network) {
-      return Response.json(
+      return noStoreJson(
         { error: `The seller must verify a ${network} payout wallet.` },
         { status: 409 }
       );
@@ -128,7 +148,7 @@ export async function POST(request: Request) {
       arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
     });
     if (!paymentConfiguration.ready) {
-      return Response.json(
+      return noStoreJson(
         {
           error: paymentReadinessMessage(
             paymentConfiguration.blockers,
@@ -152,7 +172,7 @@ export async function POST(request: Request) {
       platformWalletAddress = paymentConfiguration.platformWalletAddress;
       arbitratorWalletAddress = paymentConfiguration.arbitratorWalletAddress;
     } catch {
-      return Response.json(
+      return noStoreJson(
         { error: "One of the TON wallet addresses is invalid." },
         { status: 400 }
       );
@@ -168,6 +188,35 @@ export async function POST(request: Request) {
     } = calculateTransactionFees(baseNano);
     const dealId = crypto.randomUUID();
     const now = new Date().toISOString();
+    let deliveryAddressCiphertext: string | null = null;
+    if (listing.fulfillmentMode === "shipping") {
+      if (!payload.deliveryAddress) {
+        return noStoreJson(
+          { error: "Add a delivery address for this shipped item." },
+          { status: 400 }
+        );
+      }
+      const encryptionKey = getBinding("DEAL_DATA_ENCRYPTION_KEY");
+      if (!encryptionKey) {
+        return noStoreJson(
+          {
+            error:
+              "Private delivery details are temporarily unavailable. No payment was prepared.",
+          },
+          { status: 503 }
+        );
+      }
+      deliveryAddressCiphertext = await encryptDeliveryAddress(
+        payload.deliveryAddress,
+        encryptionKey,
+        dealId
+      );
+    } else if (payload.deliveryAddress) {
+      return noStoreJson(
+        { error: "This listing does not require a delivery address." },
+        { status: 400 }
+      );
+    }
     const deliveryDeadlineUnix =
       Math.floor(Date.now() / 1000) + DEFAULT_DELIVERY_WINDOW_SECONDS;
     const escrow = buildNativeTonEscrow({
@@ -201,7 +250,7 @@ export async function POST(request: Request) {
       )
       .limit(1);
     if (existing) {
-      return Response.json(
+      return noStoreJson(
         { error: "This listing already has an active deal." },
         { status: 409 }
       );
@@ -234,6 +283,15 @@ export async function POST(request: Request) {
         deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
         reviewWindowSeconds: escrow.reviewWindowSeconds,
         status: "pending_wallet",
+        createdAt: now,
+        updatedAt: now,
+      }),
+      db.insert(dealFulfillments).values({
+        dealId,
+        mode: listing.fulfillmentMode,
+        deliveryAddressCiphertext,
+        deliveryAddressVersion:
+          deliveryAddressCiphertext === null ? null : 1,
         createdAt: now,
         updatedAt: now,
       }),
@@ -287,7 +345,7 @@ export async function POST(request: Request) {
       }),
     ]);
 
-    return Response.json(
+    return noStoreJson(
       {
         deal: {
           id: dealId,
@@ -307,6 +365,7 @@ export async function POST(request: Request) {
           escrowFundingAmountNano: escrow.fundingAmountNano.toString(),
           deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
           reviewWindowSeconds: escrow.reviewWindowSeconds,
+          fulfillmentMode: listing.fulfillmentMode,
         },
         transaction: {
           validUntil: Math.floor(Date.now() / 1000) + 300,
@@ -326,14 +385,20 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof RateLimitError) return rateLimitResponse(error);
+    if (error instanceof RequestBodyTooLargeError) {
+      return noStoreJson(
+        { error: "Deal request is too large." },
+        { status: 413 }
+      );
+    }
     if (isActiveDealConflict(error)) {
-      return Response.json(
+      return noStoreJson(
         { error: "This listing already has an active deal." },
         { status: 409 }
       );
     }
     if (error instanceof z.ZodError) {
-      return Response.json(
+      return noStoreJson(
         { error: error.issues[0]?.message ?? "Deal is invalid." },
         { status: 400 }
       );
@@ -347,7 +412,7 @@ export async function POST(request: Request) {
         error: error instanceof Error ? error.message : String(error),
       })
     );
-    return Response.json(
+    return noStoreJson(
       { error: "The deal could not be created." },
       { status: 500 }
     );

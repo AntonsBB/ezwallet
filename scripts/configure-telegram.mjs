@@ -38,5 +38,13 @@ await telegram("setChatMenuButton", {
     web_app: { url: origin },
   },
 });
+await telegram("setMyCommands", {
+  commands: [
+    { command: "start", description: "Open Easy Wallet" },
+    { command: "claim", description: "Claim a legacy profile securely" },
+    { command: "help", description: "How Easy Wallet works" },
+    { command: "safety", description: "Wallet and deal safety" },
+  ],
+});
 
-process.stdout.write("Telegram webhook and menu button configured.\n");
+process.stdout.write("Telegram webhook, menu button, and commands configured.\n");

@@ -16,6 +16,7 @@ const validMarketListing = {
   category: "Home",
   priceTon: "1.250000001",
   location: "Riga centre",
+  fulfillmentMode: "pickup",
   delivery: "Pickup by arrangement",
 } as const;
 
@@ -47,6 +48,7 @@ test("keeps work categories flexible while requiring coordinate pairs", () => {
     section: "work",
     type: "service",
     category: "Bicycle repair",
+    fulfillmentMode: "service",
     latitude: 56.9496,
     longitude: 24.1052,
     locationRadiusMeters: 1_000,
@@ -58,6 +60,7 @@ test("keeps work categories flexible while requiring coordinate pairs", () => {
     section: "work",
     type: "service",
     category: "Bicycle repair",
+    fulfillmentMode: "service",
     latitude: 56.9496,
   });
   assert.equal(partialLocation.success, false);

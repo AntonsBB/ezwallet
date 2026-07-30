@@ -72,6 +72,22 @@ still prove wallet control to create or enter an account.
 There is no localhost bypass, demo user, password, plaintext bearer-token
 storage, or seeded production identity.
 
+`account_identities` is the chain-neutral ownership registry. Its unique
+provider/namespace/subject key prevents one wallet identity from being attached
+to two profiles, while a second unique key prevents silent same-chain identity
+replacement on an existing profile. The legacy wallet columns remain the
+current TON settlement pointer until another independently reviewed rail
+exists.
+
+Existing Telegram-era profiles can be claimed only from the same Telegram user
+in a private chat. `/claim` creates a random ten-minute token, stores only its
+SHA-256 hash, invalidates older tickets, and sends the raw token only to that
+private chat. Opening the link does not authenticate the user: it binds a
+single wallet-proof challenge to the legacy profile. The token, challenge, TON
+proof, identity uniqueness checks, and final ticket consumption must all pass
+before the wallet is attached. Telegram never becomes a reusable application
+session.
+
 ## Wallet binding
 
 1. The backend issues a random, single-use TON proof nonce, optionally tied to
@@ -178,3 +194,22 @@ account identifiers, transaction construction, finalized-state reconciliation,
 fee accounting, dispute semantics, adversarial tests, and an independent
 security review. A wallet logo or WalletConnect session alone is not a payment
 rail.
+
+Future recipient addresses are stored separately from enabled payment
+configuration. A row marked `unverified` or `disabled` is inventory only. It
+cannot make checkout ready and must not receive funds until the address,
+network, asset contract where relevant, controller, contract adapter, provider
+confirmation rules, and independent test evidence are verified.
+
+## Fulfillment boundary
+
+`listings.fulfillment_mode` separates shipping, pickup, digital, and service
+flows. `deal_fulfillments` stores participant-only state. A shipping address is
+validated in the authenticated checkout request, encrypted with AES-256-GCM
+using the deal ID as authenticated context, and written only as ciphertext.
+It is never copied into listing, event, bootstrap, storefront, or log data.
+
+The buyer can read their own submitted address. The seller receives it only
+after the reconciler has verified escrow funding. Carrier and tracking details
+are participant-only, and a shipping deal cannot prepare the delivered
+on-chain action until tracking has been recorded.

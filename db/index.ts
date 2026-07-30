@@ -15,6 +15,7 @@ function bindings() {
     TON_NETWORK?: string;
     TONCENTER_API_KEY?: string;
     RECONCILE_SECRET?: string;
+    DEAL_DATA_ENCRYPTION_KEY?: string;
     ENVIRONMENT?: string;
   };
 }
@@ -29,6 +30,7 @@ type StringBindingName =
   | "TON_NETWORK"
   | "TONCENTER_API_KEY"
   | "RECONCILE_SECRET"
+  | "DEAL_DATA_ENCRYPTION_KEY"
   | "ENVIRONMENT";
 
 export function getBinding(name: StringBindingName) {

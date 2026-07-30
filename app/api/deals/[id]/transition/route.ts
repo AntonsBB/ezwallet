@@ -2,8 +2,13 @@ import { Address } from "@ton/core";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { dealChainActions, deals } from "@/db/schema";
+import {
+  dealChainActions,
+  dealFulfillments,
+  deals,
+} from "@/db/schema";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
+import { shippingTrackingRequiredBeforeDelivery } from "@/lib/fulfillment-policy";
 import {
   buildEscrowActionPayload,
   ESCROW_ACTION_VALUE_NANO,
@@ -70,6 +75,39 @@ export async function POST(
     const isSeller =
       user.id === deal.sellerId &&
       sameAddress(user.walletAddress, deal.sellerWalletAddress);
+    if (
+      payload.action === "mark_delivered" &&
+      isSeller &&
+      deal.status === "awaiting_delivery" &&
+      deal.escrowStatus === "funded"
+    ) {
+      const [fulfillment] = await db
+        .select({
+          mode: dealFulfillments.mode,
+          trackingCode: dealFulfillments.trackingCode,
+        })
+        .from(dealFulfillments)
+        .where(eq(dealFulfillments.dealId, deal.id))
+        .limit(1);
+      if (!fulfillment) {
+        return noStoreJson(
+          {
+            error:
+              "Fulfillment details are missing. This deal cannot advance until support repairs the record.",
+          },
+          { status: 409 }
+        );
+      }
+      if (shippingTrackingRequiredBeforeDelivery(fulfillment)) {
+        return noStoreJson(
+          {
+            error:
+              "Add the shipment tracking code before marking this item delivered.",
+          },
+          { status: 409 }
+        );
+      }
+    }
     let chainKind:
       | "mark_delivered"
       | "confirm_received"

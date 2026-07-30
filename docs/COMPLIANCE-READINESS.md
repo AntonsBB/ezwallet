@@ -5,6 +5,11 @@ ready for regulated mainnet activity. A wallet signature proves control of an
 address; it does not prove a legal identity, source of funds, sanctions status,
 age, residence, or authority to act for a business.
 
+The first testnet release can keep document verification unavailable and show
+only wallet- and activity-backed trust signals. It must not award an
+identity/KYC badge, claim that worldwide availability removes local
+obligations, or treat wallet proof as sanctions or legal-identity screening.
+
 ## Current verified behavior
 
 - Wallet proof creates the marketplace account and establishes control of the
@@ -77,6 +82,11 @@ A provider integration must not be merged until it has:
 Sanctions-screen results are never exposed as a public badge. Real deal counts
 and review summaries remain separate from identity verification so activity
 cannot be mistaken for KYC.
+
+Delivery addresses and tracking identifiers are personal data. They are
+participant-only, encrypted at rest where sensitive, and excluded from public
+APIs and logs. A documented retention and deletion schedule is still required
+before accepting real merchandise volume.
 
 ## Mainnet gate
 

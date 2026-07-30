@@ -17,6 +17,7 @@ const localVariableNames = [
   "TON_NETWORK",
   "TONCENTER_API_KEY",
   "RECONCILE_SECRET",
+  "DEAL_DATA_ENCRYPTION_KEY",
   "ENVIRONMENT",
 ] as const;
 const localVars = Object.fromEntries(

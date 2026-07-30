@@ -51,6 +51,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { calculateTransactionFees, nanoToTon } from "@/lib/format";
 import { normalizePublicCoordinates } from "@/lib/geo";
+import { IDENTITY_LINK_TOKEN_PATTERN } from "@/lib/identity-link";
 import { marketCategoryOptions } from "@/lib/listing-categories";
 import {
   paymentReadinessMessage,
@@ -87,6 +88,7 @@ type SheetName =
   | "market-filters"
   | "report"
   | "dispute"
+  | "fulfillment"
   | null;
 
 type Listing = {
@@ -103,6 +105,7 @@ type Listing = {
   latitudeE6: number | null;
   longitudeE6: number | null;
   locationRadiusMeters: number | null;
+  fulfillmentMode: "shipping" | "pickup" | "digital" | "service";
   delivery: string;
   status: string;
   createdAt: string;
@@ -188,6 +191,10 @@ type Deal = {
   deliveryDeadlineUnix: number | null;
   reviewWindowSeconds: number | null;
   reviewDeadlineUnix: number | null;
+  fulfillmentMode: "shipping" | "pickup" | "digital" | "service" | null;
+  carrier: string | null;
+  trackingCode: string | null;
+  shippedAt: string | null;
   status: string;
   network: "mainnet" | "testnet";
   transactionRef: string | null;
@@ -195,6 +202,17 @@ type Deal = {
   sellerId: number;
   counterpartyName: string;
   createdAt: string;
+};
+
+type FulfillmentDetail = {
+  mode: "shipping" | "pickup" | "digital" | "service";
+  deliveryAddress: DeliveryAddressForm | null;
+  addressAvailable: boolean;
+  addressVisible: boolean;
+  carrier: string | null;
+  trackingCode: string | null;
+  shippedAt: string | null;
+  updatedAt: string;
 };
 
 type ApplicationSummary = {
@@ -217,6 +235,7 @@ type OwnerListing = Pick<
   | "latitudeE6"
   | "longitudeE6"
   | "locationRadiusMeters"
+  | "fulfillmentMode"
   | "delivery"
   | "status"
   | "createdAt"
@@ -1150,6 +1169,7 @@ function WalletScreen({
   onConnect,
   onDisconnect,
   onDealAction,
+  onFulfillment,
 }: {
   walletAddress: string;
   walletConnected: boolean;
@@ -1170,6 +1190,7 @@ function WalletScreen({
       | "refund_expired"
       | "release_after_review"
   ) => void;
+  onFulfillment: (deal: Deal) => void;
 }) {
   const [nowUnix, setNowUnix] = useState(0);
   useEffect(() => {
@@ -1272,6 +1293,26 @@ function WalletScreen({
                 </div>
                 <b>{nanoToTon(deal.grossNano)} TON</b>
               </div>
+              {deal.fulfillmentMode && (
+                <button
+                  type="button"
+                  className="deal-fulfillment-link"
+                  onClick={() => onFulfillment(deal)}
+                >
+                  <PackageCheck size={15} />
+                  <span>
+                    {deal.fulfillmentMode === "shipping"
+                      ? deal.trackingCode
+                        ? `${deal.carrier ?? "Shipment"} · ${deal.trackingCode}`
+                        : deal.sellerId === currentUserId &&
+                            deal.escrowStatus === "funded"
+                          ? "Add shipment tracking"
+                          : "Delivery details"
+                      : `${deal.fulfillmentMode} details`}
+                  </span>
+                  <ChevronRight size={15} />
+                </button>
+              )}
               {deal.status === "pending_wallet" &&
                 deal.buyerId === currentUserId && (
                   <p className="deal-pending-note">
@@ -1282,7 +1323,9 @@ function WalletScreen({
               {deal.status === "awaiting_delivery" && (
                 <div className="deal-actions">
                   {deal.escrowStatus === "funded" &&
-                    deal.sellerId === currentUserId && (
+                    deal.sellerId === currentUserId &&
+                    (deal.fulfillmentMode !== "shipping" ||
+                      Boolean(deal.trackingCode)) && (
                     <button
                       type="button"
                       onClick={() => onDealAction(deal, "mark_delivered")}
@@ -2154,8 +2197,15 @@ type CreateForm = {
   latitude?: number;
   longitude?: number;
   locationRadiusMeters?: number;
+  fulfillmentMode: "shipping" | "pickup" | "digital" | "service";
   delivery: string;
 };
+
+function defaultFulfillmentMode(type: CreateForm["type"]) {
+  if (type === "physical") return "shipping" as const;
+  if (type === "digital") return "digital" as const;
+  return "service" as const;
+}
 
 const initialCreateForm: CreateForm = {
   section: "market",
@@ -2168,6 +2218,7 @@ const initialCreateForm: CreateForm = {
   latitude: undefined,
   longitude: undefined,
   locationRadiusMeters: undefined,
+  fulfillmentMode: "shipping",
   delivery: "",
 };
 
@@ -2213,12 +2264,15 @@ function CreateSheet({
               ? undefined
               : listing.longitudeE6 / 1_000_000,
           locationRadiusMeters: listing.locationRadiusMeters ?? undefined,
+          fulfillmentMode: listing.fulfillmentMode,
           delivery: listing.delivery,
         }
       : {
           ...initialCreateForm,
           section: initialSection,
           type: initialSection === "market" ? "physical" : "service",
+          fulfillmentMode:
+            initialSection === "market" ? "shipping" : "service",
           category: "",
         }),
   }));
@@ -2230,6 +2284,7 @@ function CreateSheet({
       ...current,
       section,
       type: section === "market" ? "physical" : "service",
+      fulfillmentMode: section === "market" ? "shipping" : "service",
       category: "",
       delivery: "",
       latitude: section === "market" ? undefined : current.latitude,
@@ -2329,10 +2384,14 @@ function CreateSheet({
               <select
                 value={form.type}
                 onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    type: event.target.value as CreateForm["type"],
-                  }))
+                  setForm((current) => {
+                    const type = event.target.value as CreateForm["type"];
+                    return {
+                      ...current,
+                      type,
+                      fulfillmentMode: defaultFulfillmentMode(type),
+                    };
+                  })
                 }
               >
                 {form.section === "market" ? (
@@ -2349,6 +2408,25 @@ function CreateSheet({
               </select>
             </label>
           </>
+        )}
+
+        {form.type === "physical" && (
+          <label>
+            <span>Handoff</span>
+            <select
+              value={form.fulfillmentMode}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  fulfillmentMode: event.target
+                    .value as CreateForm["fulfillmentMode"],
+                }))
+              }
+            >
+              <option value="shipping">Ship to buyer</option>
+              <option value="pickup">Local pickup</option>
+            </select>
+          </label>
         )}
 
         <label>
@@ -2719,6 +2797,28 @@ function PaymentSuccessSheet({
   );
 }
 
+type DeliveryAddressForm = {
+  recipientName: string;
+  line1: string;
+  line2: string;
+  city: string;
+  region: string;
+  postalCode: string;
+  countryCode: string;
+  instructions: string;
+};
+
+const initialDeliveryAddress: DeliveryAddressForm = {
+  recipientName: "",
+  line1: "",
+  line2: "",
+  city: "",
+  region: "",
+  postalCode: "",
+  countryCode: "",
+  instructions: "",
+};
+
 function PaymentQuoteSheet({
   open,
   listing,
@@ -2730,16 +2830,31 @@ function PaymentQuoteSheet({
   listing: Listing | null;
   busy: boolean;
   onClose: () => void;
-  onConfirm: (listing: Listing) => Promise<void>;
+  onConfirm: (
+    listing: Listing,
+    deliveryAddress?: DeliveryAddressForm
+  ) => Promise<void>;
 }) {
+  const [deliveryAddress, setDeliveryAddress] =
+    useState<DeliveryAddressForm>(initialDeliveryAddress);
   if (!listing) return null;
   const quote = calculateTransactionFees(BigInt(listing.priceNano));
   const walletRequestNano =
     quote.buyerTotalNano + escrowFundingReserveNano;
+  const requiresShipping = listing.fulfillmentMode === "shipping";
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Review payment">
-      <div className="payment-success">
+      <form
+        className="payment-success checkout-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onConfirm(
+            listing,
+            requiresShipping ? deliveryAddress : undefined
+          );
+        }}
+      >
         <span className="eyebrow">Transparent checkout</span>
         <h2>{listing.title}</h2>
         <p>
@@ -2747,6 +2862,143 @@ function PaymentQuoteSheet({
           Funds enter a per-deal TON escrow contract; Easy Wallet never stores a
           spendable key.
         </p>
+        {requiresShipping && (
+          <fieldset className="delivery-address-fields">
+            <legend>Delivery address</legend>
+            <p>
+              Encrypted before storage and shown only to you and the seller
+              after escrow funding is confirmed.
+            </p>
+            <label>
+              <span>Recipient</span>
+              <input
+                required
+                autoComplete="name"
+                minLength={2}
+                maxLength={120}
+                value={deliveryAddress.recipientName}
+                onChange={(event) =>
+                  setDeliveryAddress((current) => ({
+                    ...current,
+                    recipientName: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>Address</span>
+              <input
+                required
+                autoComplete="address-line1"
+                minLength={3}
+                maxLength={160}
+                value={deliveryAddress.line1}
+                onChange={(event) =>
+                  setDeliveryAddress((current) => ({
+                    ...current,
+                    line1: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>Apartment, unit, etc. (optional)</span>
+              <input
+                autoComplete="address-line2"
+                maxLength={160}
+                value={deliveryAddress.line2}
+                onChange={(event) =>
+                  setDeliveryAddress((current) => ({
+                    ...current,
+                    line2: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <div className="delivery-address-grid">
+              <label>
+                <span>City</span>
+                <input
+                  required
+                  autoComplete="address-level2"
+                  minLength={2}
+                  maxLength={100}
+                  value={deliveryAddress.city}
+                  onChange={(event) =>
+                    setDeliveryAddress((current) => ({
+                      ...current,
+                      city: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Region (optional)</span>
+                <input
+                  autoComplete="address-level1"
+                  maxLength={100}
+                  value={deliveryAddress.region}
+                  onChange={(event) =>
+                    setDeliveryAddress((current) => ({
+                      ...current,
+                      region: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Postal code</span>
+                <input
+                  required
+                  autoComplete="postal-code"
+                  minLength={2}
+                  maxLength={32}
+                  value={deliveryAddress.postalCode}
+                  onChange={(event) =>
+                    setDeliveryAddress((current) => ({
+                      ...current,
+                      postalCode: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Country code</span>
+                <input
+                  required
+                  autoComplete="country"
+                  inputMode="text"
+                  minLength={2}
+                  maxLength={2}
+                  pattern="[A-Za-z]{2}"
+                  placeholder="LV"
+                  value={deliveryAddress.countryCode}
+                  onChange={(event) =>
+                    setDeliveryAddress((current) => ({
+                      ...current,
+                      countryCode: event.target.value
+                        .replace(/[^A-Za-z]/g, "")
+                        .toUpperCase(),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <label>
+              <span>Delivery notes (optional)</span>
+              <textarea
+                maxLength={240}
+                value={deliveryAddress.instructions}
+                onChange={(event) =>
+                  setDeliveryAddress((current) => ({
+                    ...current,
+                    instructions: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </fieldset>
+        )}
         <div className="payment-breakdown">
           <div>
             <span>Item or service price</span>
@@ -2778,10 +3030,9 @@ function PaymentQuoteSheet({
           </div>
         </div>
         <button
-          type="button"
+          type="submit"
           className="primary-action"
           disabled={busy}
-          onClick={() => void onConfirm(listing)}
         >
           {busy
             ? "Preparing wallet…"
@@ -2791,7 +3042,7 @@ function PaymentQuoteSheet({
         <button type="button" className="text-action" onClick={onClose}>
           Back to listing
         </button>
-      </div>
+      </form>
     </BottomSheet>
   );
 }
@@ -2914,6 +3165,180 @@ function ReportSheet({
           {busy ? "Sending…" : "Send report"} <ArrowRight size={18} />
         </button>
       </form>
+    </BottomSheet>
+  );
+}
+
+function FulfillmentSheet({
+  open,
+  deal,
+  detail,
+  state,
+  busy,
+  currentUserId,
+  onClose,
+  onSaveTracking,
+}: {
+  open: boolean;
+  deal: Deal | null;
+  detail: FulfillmentDetail | null;
+  state: "loading" | "ready" | "error";
+  busy: boolean;
+  currentUserId?: number;
+  onClose: () => void;
+  onSaveTracking: (carrier: string, trackingCode: string) => Promise<void>;
+}) {
+  const [carrier, setCarrier] = useState(detail?.carrier ?? "");
+  const [trackingCode, setTrackingCode] = useState(detail?.trackingCode ?? "");
+  const isSeller = Boolean(deal && deal.sellerId === currentUserId);
+  const canAddTracking =
+    isSeller &&
+    deal?.status === "awaiting_delivery" &&
+    deal.escrowStatus === "funded" &&
+    detail?.mode === "shipping";
+  const address = detail?.deliveryAddress;
+
+  return (
+    <BottomSheet
+      open={open && Boolean(deal)}
+      onClose={onClose}
+      title="Fulfillment details"
+    >
+      <div className="fulfillment-sheet">
+        {state === "loading" && (
+          <div className="empty-state compact" role="status">
+            <RefreshCw size={22} />
+            <strong>Loading private deal details…</strong>
+          </div>
+        )}
+        {state === "error" && (
+          <div className="empty-state compact" role="alert">
+            <WifiOff size={22} />
+            <strong>Fulfillment details are unavailable</strong>
+            <p>Close this panel and try again.</p>
+          </div>
+        )}
+        {state === "ready" && detail && (
+          <>
+            <div className="fulfillment-heading">
+              <PackageCheck size={22} />
+              <div>
+                <span>{detail.mode}</span>
+                <strong>{deal?.title}</strong>
+              </div>
+            </div>
+
+            {detail.mode === "shipping" && (
+              <section className="fulfillment-section">
+                <span>Delivery address</span>
+                {address ? (
+                  <address>
+                    <strong>{address.recipientName}</strong>
+                    <span>{address.line1}</span>
+                    {address.line2 && <span>{address.line2}</span>}
+                    <span>
+                      {[address.city, address.region, address.postalCode]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </span>
+                    <span>{address.countryCode}</span>
+                    {address.instructions && (
+                      <small>{address.instructions}</small>
+                    )}
+                  </address>
+                ) : (
+                  <p>
+                    {detail.addressAvailable && !detail.addressVisible
+                      ? "The seller can view this address after escrow funding is confirmed."
+                      : "No delivery address is available."}
+                  </p>
+                )}
+              </section>
+            )}
+
+            {detail.mode === "pickup" && (
+              <div className="form-notice">
+                <MapPin size={17} />
+                Arrange a safe public pickup point with the other party. Exact
+                home coordinates are never published.
+              </div>
+            )}
+
+            {detail.mode === "digital" && (
+              <div className="form-notice">
+                <LockKeyhole size={17} />
+                Deliver access details through your agreed private channel; do
+                not place passwords or recovery phrases in public listing text.
+              </div>
+            )}
+
+            {detail.mode === "service" && (
+              <div className="form-notice">
+                <Target size={17} />
+                Complete the agreed scope and use the escrow actions to record
+                delivery and acceptance.
+              </div>
+            )}
+
+            {detail.mode === "shipping" && (
+              <section className="fulfillment-section">
+                <span>Shipment</span>
+                {detail.trackingCode && detail.carrier ? (
+                  <div className="tracking-record">
+                    <small>{detail.carrier}</small>
+                    <strong>{detail.trackingCode}</strong>
+                    <span>
+                      Added{" "}
+                      {detail.shippedAt
+                        ? new Date(detail.shippedAt).toLocaleString()
+                        : "recently"}
+                    </span>
+                  </div>
+                ) : (
+                  <p>No tracking code has been added yet.</p>
+                )}
+              </section>
+            )}
+
+            {canAddTracking && (
+              <form
+                className="tracking-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void onSaveTracking(carrier, trackingCode);
+                }}
+              >
+                <label>
+                  <span>Carrier</span>
+                  <input
+                    required
+                    minLength={2}
+                    maxLength={60}
+                    value={carrier}
+                    onChange={(event) => setCarrier(event.target.value)}
+                    placeholder="Carrier or courier"
+                  />
+                </label>
+                <label>
+                  <span>Tracking code</span>
+                  <input
+                    required
+                    minLength={3}
+                    maxLength={80}
+                    value={trackingCode}
+                    onChange={(event) => setTrackingCode(event.target.value)}
+                    placeholder="Code only, not a link"
+                  />
+                </label>
+                <button className="primary-action" disabled={busy}>
+                  {busy ? "Saving…" : "Save tracking"}{" "}
+                  {!busy && <ArrowRight size={18} />}
+                </button>
+              </form>
+            )}
+          </>
+        )}
+      </div>
     </BottomSheet>
   );
 }
@@ -3087,6 +3512,11 @@ export default function EzWalletApp() {
     "loading" | "ready" | "error"
   >("ready");
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+  const [fulfillmentDetail, setFulfillmentDetail] =
+    useState<FulfillmentDetail | null>(null);
+  const [fulfillmentState, setFulfillmentState] = useState<
+    "loading" | "ready" | "error"
+  >("ready");
   const [query, setQuery] = useState("");
   const [marketCategory, setMarketCategory] = useState("All");
   const [workCategory, setWorkCategory] = useState("All");
@@ -3112,6 +3542,8 @@ export default function EzWalletApp() {
   const [walletProofStatus, setWalletProofStatus] = useState<
     "idle" | "ready" | "verifying" | "verified" | "reconnect" | "error"
   >("idle");
+  const [legacyClaimToken, setLegacyClaimToken] = useState("");
+  const [legacyClaimActive, setLegacyClaimActive] = useState(false);
   const proofAttempt = useRef("");
   const wallet = useTonWallet();
   const walletAddress = useTonAddress(true);
@@ -3171,6 +3603,33 @@ export default function EzWalletApp() {
     },
     []
   );
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const claimToken = url.searchParams.get("claim") ?? "";
+    let timer: number | undefined;
+    if (IDENTITY_LINK_TOKEN_PATTERN.test(claimToken)) {
+      timer = window.setTimeout(() => {
+        setLegacyClaimToken(claimToken);
+        showToast(
+          "Legacy profile claim detected. Connect a wallet to finish securely.",
+          "neutral"
+        );
+      }, 0);
+    }
+    if (url.searchParams.has("claim")) {
+      url.searchParams.delete("claim");
+      const query = url.searchParams.toString();
+      window.history.replaceState(
+        {},
+        "",
+        `${url.pathname}${query ? `?${query}` : ""}${url.hash}`
+      );
+    }
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [showToast]);
 
   const loadBootstrap = useCallback(async () => {
     setBootstrapState("loading");
@@ -3320,9 +3779,13 @@ export default function EzWalletApp() {
       tonConnectUi.setConnectRequestParameters({ state: "loading" });
       const response = await apiFetch("/api/wallet/challenge", {
         method: "POST",
+        body: JSON.stringify(
+          legacyClaimToken ? { claimToken: legacyClaimToken } : {}
+        ),
       });
       const data = (await response.json()) as {
         challenge?: string;
+        intent?: "sign_in" | "verify_or_link" | "claim_legacy_profile";
         error?: string;
       };
       if (!response.ok || !data.challenge) {
@@ -3332,6 +3795,7 @@ export default function EzWalletApp() {
         state: "ready",
         value: { tonProof: data.challenge },
       });
+      setLegacyClaimActive(data.intent === "claim_legacy_profile");
       setWalletProofStatus(wallet ? "reconnect" : "ready");
       if (wallet) await tonConnectUi.disconnect();
       await tonConnectUi.openModal();
@@ -3345,7 +3809,14 @@ export default function EzWalletApp() {
         "error"
       );
     }
-  }, [apiFetch, config.network, showToast, tonConnectUi, wallet]);
+  }, [
+    apiFetch,
+    config.network,
+    legacyClaimToken,
+    showToast,
+    tonConnectUi,
+    wallet,
+  ]);
 
   useEffect(() => {
     telegram?.ready();
@@ -3410,7 +3881,16 @@ export default function EzWalletApp() {
         setWalletProofStatus("verified");
         await loadSession();
         telegram?.HapticFeedback?.notificationOccurred("success");
-        showToast("TON wallet verified.", "success");
+        showToast(
+          legacyClaimActive
+            ? "Legacy profile linked to your verified wallet."
+            : "TON wallet verified.",
+          "success"
+        );
+        if (legacyClaimActive) {
+          setLegacyClaimToken("");
+          setLegacyClaimActive(false);
+        }
       })
       .catch((error) => {
         setWalletProofStatus("error");
@@ -3419,7 +3899,14 @@ export default function EzWalletApp() {
           "error"
         );
       });
-  }, [apiFetch, loadSession, showToast, telegram, wallet]);
+  }, [
+    apiFetch,
+    legacyClaimActive,
+    loadSession,
+    showToast,
+    telegram,
+    wallet,
+  ]);
 
   const savedListingSet = useMemo(
     () => new Set(savedListingIds),
@@ -3774,12 +4261,18 @@ export default function EzWalletApp() {
     setSheet("checkout");
   };
 
-  const confirmPayment = async (listing: Listing) => {
+  const confirmPayment = async (
+    listing: Listing,
+    deliveryAddress?: DeliveryAddressForm
+  ) => {
     setBusy(true);
     try {
       const dealResponse = await apiFetch("/api/deals", {
         method: "POST",
-        body: JSON.stringify({ listingId: listing.id }),
+        body: JSON.stringify({
+          listingId: listing.id,
+          ...(deliveryAddress ? { deliveryAddress } : {}),
+        }),
       });
       const dealData = (await dealResponse.json()) as {
         error?: string;
@@ -3989,6 +4482,78 @@ export default function EzWalletApp() {
     }
   };
 
+  const openFulfillment = async (deal: Deal) => {
+    setSelectedDeal(deal);
+    setFulfillmentDetail(null);
+    setFulfillmentState("loading");
+    setSheet("fulfillment");
+    try {
+      const response = await apiFetch(
+        `/api/deals/${encodeURIComponent(deal.id)}/fulfillment`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as {
+        fulfillment?: FulfillmentDetail;
+        error?: string;
+      };
+      if (!response.ok || !data.fulfillment) {
+        throw new Error(
+          data.error ?? "Fulfillment details could not be loaded."
+        );
+      }
+      setFulfillmentDetail(data.fulfillment);
+      setFulfillmentState("ready");
+    } catch (error) {
+      setFulfillmentState("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Fulfillment details could not be loaded.",
+        "error"
+      );
+    }
+  };
+
+  const saveTracking = async (carrier: string, trackingCode: string) => {
+    if (!selectedDeal) return;
+    setBusy(true);
+    try {
+      const response = await apiFetch(
+        `/api/deals/${encodeURIComponent(selectedDeal.id)}/fulfillment`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ carrier, trackingCode }),
+        }
+      );
+      const data = (await response.json()) as {
+        fulfillment?: Pick<
+          FulfillmentDetail,
+          "mode" | "carrier" | "trackingCode" | "shippedAt" | "updatedAt"
+        >;
+        error?: string;
+      };
+      if (!response.ok || !data.fulfillment) {
+        throw new Error(data.error ?? "Tracking details could not be saved.");
+      }
+      setFulfillmentDetail((current) =>
+        current ? { ...current, ...data.fulfillment } : current
+      );
+      await loadSession();
+      telegram?.HapticFeedback?.notificationOccurred("success");
+      showToast("Shipment tracking saved.", "success");
+    } catch (error) {
+      telegram?.HapticFeedback?.notificationOccurred("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Tracking details could not be saved.",
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const transitionDeal = async (
     deal: Deal,
     action:
@@ -4191,6 +4756,7 @@ export default function EzWalletApp() {
               currentUserId={session?.id}
               onConnect={() => void openWalletConnection()}
               onDisconnect={() => void disconnectWallet()}
+              onFulfillment={(deal) => void openFulfillment(deal)}
               onDealAction={(deal, action) => {
                 if (action === "dispute") {
                   setSelectedDeal(deal);
@@ -4394,6 +4960,22 @@ export default function EzWalletApp() {
           }}
         />
 
+        <FulfillmentSheet
+          key={selectedDeal?.id ?? "no-fulfillment"}
+          open={sheet === "fulfillment"}
+          deal={selectedDeal}
+          detail={fulfillmentDetail}
+          state={fulfillmentState}
+          busy={busy}
+          currentUserId={session?.id}
+          onClose={() => {
+            setSheet(null);
+            setSelectedDeal(null);
+            setFulfillmentDetail(null);
+          }}
+          onSaveTracking={saveTracking}
+        />
+
         <PaymentSuccessSheet
           open={sheet === "payment"}
           deal={paymentDeal}
@@ -4404,6 +4986,11 @@ export default function EzWalletApp() {
         />
 
         <PaymentQuoteSheet
+          key={
+            sheet === "checkout"
+              ? `checkout:${selectedListing?.id ?? "none"}`
+              : "checkout:closed"
+          }
           open={sheet === "checkout"}
           listing={selectedListing}
           busy={busy}

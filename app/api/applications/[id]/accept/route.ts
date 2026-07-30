@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
 import {
   applications,
+  dealFulfillments,
   dealEvents,
   deals,
   ledgerEntries,
@@ -33,7 +34,8 @@ function isActiveDealConflict(error: unknown) {
       : String(error);
   return (
     message.includes("deals_listing_active_idx") ||
-    message.includes("UNIQUE constraint failed: deals.listing_id")
+    message.includes("UNIQUE constraint failed: deals.listing_id") ||
+    message.includes("deal_listing_not_eligible")
   );
 }
 
@@ -222,6 +224,12 @@ export async function POST(
         createdAt: now,
         updatedAt: now,
       }),
+      db.insert(dealFulfillments).values({
+        dealId,
+        mode: "service",
+        createdAt: now,
+        updatedAt: now,
+      }),
       db.insert(ledgerEntries).values([
         {
           id: crypto.randomUUID(),
@@ -292,6 +300,7 @@ export async function POST(
           escrowFundingAmountNano: escrow.fundingAmountNano.toString(),
           deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
           reviewWindowSeconds: escrow.reviewWindowSeconds,
+          fulfillmentMode: "service",
         },
         transaction: {
           validUntil: Math.floor(Date.now() / 1000) + 300,

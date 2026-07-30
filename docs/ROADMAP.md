@@ -54,8 +54,18 @@ funds, external promotion, bot deletion, or unattended account changes.
   cache.
 - [x] Remove Telegram identity from payment-readiness and arbitrator
   authorization.
-- [ ] Add a chain-neutral account-link table before implementing a second
+- [x] Add a chain-neutral account-link table before implementing a second
   signed wallet-identity adapter.
+- [x] Add a private, short-lived Telegram legacy-profile claim that still
+  requires fresh wallet ownership proof and rejects duplicate ownership,
+  wallet substitution, replay, group-chat delivery, and revoked identities.
+- [x] Add a private payment-recipient registry so future rail addresses can be
+  retained as disabled and unverified without implying settlement support.
+- [x] Add structured shipping, pickup, digital, and service fulfillment modes.
+- [x] Encrypt shipping addresses before storage and gate seller access on
+  verified escrow funding.
+- [x] Add participant-only carrier/tracking UX and require tracking before a
+  shipped item can be marked delivered.
 - [ ] Implement any EVM, Solana, Bitcoin, XRP, token, or stablecoin rail only
   with its own proof, settlement, reconciliation, dispute, and security review.
 

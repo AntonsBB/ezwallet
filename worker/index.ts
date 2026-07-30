@@ -12,12 +12,13 @@ type EasyWalletEnv = Env & {
   TON_NETWORK?: string;
   TONCENTER_API_KEY?: string;
   RECONCILE_SECRET?: string;
+  DEAL_DATA_ENCRYPTION_KEY?: string;
 };
 
 function withSecurityHeaders(response: Response) {
   const secured = new Response(response.body, response);
   secured.headers.set("x-content-type-options", "nosniff");
-  secured.headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  secured.headers.set("referrer-policy", "no-referrer");
   secured.headers.set(
     "permissions-policy",
     "camera=(), microphone=(), geolocation=(self), payment=()"

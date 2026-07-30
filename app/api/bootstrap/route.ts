@@ -23,6 +23,7 @@ export async function GET() {
         latitudeE6: listings.latitudeE6,
         longitudeE6: listings.longitudeE6,
         locationRadiusMeters: listings.locationRadiusMeters,
+        fulfillmentMode: listings.fulfillmentMode,
         delivery: listings.delivery,
         status: listings.status,
         createdAt: listings.createdAt,

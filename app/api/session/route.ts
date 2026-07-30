@@ -2,6 +2,7 @@ import { desc, eq, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import {
+  dealFulfillments,
   deals,
   listings,
   users,
@@ -45,6 +46,10 @@ async function handleSession(request: Request) {
         status: deals.status,
         network: deals.network,
         transactionRef: deals.transactionRef,
+        fulfillmentMode: dealFulfillments.mode,
+        carrier: dealFulfillments.carrier,
+        trackingCode: dealFulfillments.trackingCode,
+        shippedAt: dealFulfillments.shippedAt,
         buyerId: deals.buyerId,
         sellerId: deals.sellerId,
         buyerName: buyerUser.displayName,
@@ -55,6 +60,7 @@ async function handleSession(request: Request) {
       .innerJoin(listings, eq(deals.listingId, listings.id))
       .innerJoin(buyerUser, eq(buyerUser.id, deals.buyerId))
       .innerJoin(sellerUser, eq(sellerUser.id, deals.sellerId))
+      .leftJoin(dealFulfillments, eq(dealFulfillments.dealId, deals.id))
       .where(or(eq(deals.buyerId, user.id), eq(deals.sellerId, user.id)))
       .orderBy(desc(deals.createdAt))
       .limit(20);

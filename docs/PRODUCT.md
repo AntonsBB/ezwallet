@@ -21,6 +21,8 @@ The wallet supports the marketplace. Easy Wallet never receives seed phrases, st
    account. Telegram can launch the PWA but cannot authenticate it.
    Government-document verification is not implemented without a qualified
    provider and a separate legal/security review.
+   A legacy Telegram-era profile may be migrated with a private, expiring bot
+   claim, but the migration still completes only after fresh wallet proof.
 4. Every paid deal charges 1% to the buyer and 1% to the seller, disclosed only
    in the transaction review and wallet-approval flow.
 5. A browser response never proves payment. Payment records remain pending until
@@ -58,14 +60,18 @@ shell and can be installed from supported browsers.
    and proof-verified settlement-wallet readiness.
 4. Connect and verify a compatible TON wallet through an extension, QR,
    universal link, or in-wallet browser.
-5. Review an immutable quote showing the base price, 1% buyer fee, 1% seller fee, buyer total, seller proceeds, recipients, and network.
-6. Approve one transaction that atomically deploys and funds the deal's
+5. For shipped goods, add the delivery address in the same checkout; pickup,
+   digital, and service deals do not ask for one.
+6. Review an immutable quote showing the base price, 1% buyer fee, 1% seller fee, buyer total, seller proceeds, recipients, and network.
+7. Approve one transaction that atomically deploys and funds the deal's
    deterministic escrow contract.
-7. Easy Wallet records the signed submission as pending.
-8. The payment monitor confirms the expected contract code, immutable terms,
+8. Easy Wallet records the signed submission as pending.
+9. The payment monitor confirms the expected contract code, immutable terms,
    sender, amount, and funding payload on-chain.
-9. Seller marks delivery on-chain. Buyer confirms release or opens a dispute,
-    and both parties may review after verified settlement.
+10. For shipped goods, the funded seller reads the encrypted address and adds
+    carrier/tracking details before marking delivery on-chain. Buyer confirms
+    release or opens a dispute, and both parties may review after verified
+    settlement.
 
 ### Find work
 
@@ -100,6 +106,12 @@ rails separate. Additional chain adapters must implement their own signed
 authentication, transaction construction, independent reconciliation, escrow
 or dispute design, and security review. The UI and documentation must not imply
 native ETH, BTC, SOL, XRP, token, or stablecoin support before those rails exist.
+Saving a fee-recipient address is not the same as enabling that rail.
+
+Physical listings declare shipping or pickup at publication time. Shipping
+addresses are participant-only, encrypted before storage, omitted from events
+and public APIs, and revealed to the seller only after verified funding.
+Digital products and services skip address collection entirely.
 
 ## Deal and fee rules
 

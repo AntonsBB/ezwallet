@@ -23,6 +23,11 @@ It is intentionally non-custodial:
   deal advances.
 - D1 stores marketplace state, per-user saved listings, and an append-only
   deal/ledger event history.
+- Shipped goods collect a structured address only at checkout. The address is
+  encrypted before D1 storage and stays hidden from the seller until escrow
+  funding is independently verified.
+- Deal participants can view fulfillment status and shipment tracking; a
+  shipping seller adds a carrier and tracking code before signing delivery.
 - Workers KV stores immutable user-uploaded listing images behind a constrained
   media route.
 
@@ -132,6 +137,7 @@ Set these runtime bindings before enabling payments:
 | `TELEGRAM_BOT_USERNAME` | optional | identifies the optional launch bot |
 | `TELEGRAM_WEBHOOK_SECRET` | optional, secret | authenticates optional Telegram webhook requests |
 | `RECONCILE_SECRET` | yes, secret | protects manual reconciliation fallback |
+| `DEAL_DATA_ENCRYPTION_KEY` | yes for shipping, secret | 32-byte base64url key for per-deal delivery-address encryption |
 | `TONCENTER_API_KEY` | recommended, secret | raises TON Center limits |
 | `NEXT_PUBLIC_MAP_TILE_URL` | optional | changes the attributed interactive map tile provider without a code edit |
 
@@ -144,8 +150,18 @@ tests, and operational moderation is staffed.
 be present, valid, and distinct. Arbitration requests are available only to a
 proof-verified wallet matching the arbitrator frozen into that deal. The public
 bootstrap API returns only safe blocker codes, never configured addresses.
+Future-chain fee addresses live in a private, disabled-by-default inventory.
+An inventory row does not enable BTC, EVM, Solana, Cardano, Stellar, Tron, XRP,
+Litecoin, Dogecoin, token, or stablecoin payments.
 
 ## Optional Telegram adapter
+
+Telegram remains an optional launch and recovery bridge. It does not create an
+Easy Wallet browser session or authorize marketplace actions. A user with a
+legacy Telegram-era profile may send `/claim` in a private chat with the
+dedicated Easy Wallet bot. The resulting ten-minute, one-time link still
+requires a fresh wallet ownership proof; links requested in groups, replayed
+links, duplicate wallet ownership, and wallet substitution fail closed.
 
 1. Create or choose a bot in BotFather.
 2. Configure the deployed HTTPS URL as the bot menu Web App.

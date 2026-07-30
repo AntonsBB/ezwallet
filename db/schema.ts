@@ -43,6 +43,106 @@ export const users = sqliteTable(
   ]
 );
 
+export const accountIdentities = sqliteTable(
+  "account_identities",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    provider: text("provider", { enum: ["ton", "telegram"] }).notNull(),
+    namespace: text("namespace").notNull(),
+    subject: text("subject").notNull(),
+    proofMethod: text("proof_method", {
+      enum: ["ton_proof", "telegram_bot_claim", "legacy_import"],
+    }).notNull(),
+    verifiedAt: text("verified_at").notNull(),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("account_identities_provider_subject_idx").on(
+      table.provider,
+      table.namespace,
+      table.subject
+    ),
+    uniqueIndex("account_identities_user_provider_idx").on(
+      table.userId,
+      table.provider,
+      table.namespace
+    ),
+    index("account_identities_user_idx").on(
+      table.userId,
+      table.provider,
+      table.revokedAt
+    ),
+  ]
+);
+
+export const identityLinkTickets = sqliteTable(
+  "identity_link_tickets",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    sourceIdentityId: text("source_identity_id")
+      .notNull()
+      .references(() => accountIdentities.id),
+    secretHash: text("secret_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    exchangedChallengeId: text("exchanged_challenge_id"),
+    usedAt: text("used_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("identity_link_tickets_secret_idx").on(table.secretHash),
+    uniqueIndex("identity_link_tickets_challenge_idx")
+      .on(table.exchangedChallengeId)
+      .where(sql`${table.exchangedChallengeId} IS NOT NULL`),
+    index("identity_link_tickets_user_idx").on(table.userId, table.createdAt),
+    index("identity_link_tickets_expiry_idx").on(table.expiresAt),
+  ]
+);
+
+export const paymentRailRecipients = sqliteTable(
+  "payment_rail_recipients",
+  {
+    id: text("id").primaryKey(),
+    rail: text("rail").notNull(),
+    network: text("network").notNull(),
+    asset: text("asset").notNull(),
+    role: text("role", {
+      enum: ["platform_fee", "arbitrator_candidate"],
+    }).notNull(),
+    label: text("label").notNull(),
+    address: text("address").notNull(),
+    status: text("status", {
+      enum: ["unverified", "verified", "disabled"],
+    })
+      .notNull()
+      .default("unverified"),
+    verifiedAt: text("verified_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("payment_rail_recipients_scope_idx").on(
+      table.rail,
+      table.network,
+      table.asset,
+      table.role,
+      table.label
+    ),
+    index("payment_rail_recipients_status_idx").on(
+      table.status,
+      table.rail,
+      table.network
+    ),
+  ]
+);
+
 export const listings = sqliteTable(
   "listings",
   {
@@ -65,6 +165,11 @@ export const listings = sqliteTable(
     latitudeE6: integer("latitude_e6"),
     longitudeE6: integer("longitude_e6"),
     locationRadiusMeters: integer("location_radius_meters"),
+    fulfillmentMode: text("fulfillment_mode", {
+      enum: ["shipping", "pickup", "digital", "service"],
+    })
+      .notNull()
+      .default("service"),
     delivery: text("delivery").notNull().default("Arrange in chat"),
     status: text("status", {
       enum: ["draft", "active", "paused", "sold", "closed", "removed"],
@@ -202,6 +307,28 @@ export const deals = sqliteTable(
   ]
 );
 
+export const dealFulfillments = sqliteTable(
+  "deal_fulfillments",
+  {
+    dealId: text("deal_id")
+      .primaryKey()
+      .references(() => deals.id),
+    mode: text("mode", {
+      enum: ["shipping", "pickup", "digital", "service"],
+    }).notNull(),
+    deliveryAddressCiphertext: text("delivery_address_ciphertext"),
+    deliveryAddressVersion: integer("delivery_address_version"),
+    carrier: text("carrier"),
+    trackingCode: text("tracking_code"),
+    shippedAt: text("shipped_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("deal_fulfillments_mode_idx").on(table.mode, table.shippedAt),
+  ]
+);
+
 export const dealChainActions = sqliteTable(
   "deal_chain_actions",
   {
@@ -335,6 +462,9 @@ export const walletAuthChallenges = sqliteTable(
   {
     id: text("id").primaryKey(),
     userId: integer("user_id").references(() => users.id),
+    linkTicketId: text("link_ticket_id").references(
+      () => identityLinkTickets.id
+    ),
     payload: text("payload").notNull(),
     expiresAt: text("expires_at").notNull(),
     usedAt: text("used_at"),

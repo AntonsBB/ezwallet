@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  fulfillmentModeForListingType,
+  fulfillmentModeSchema,
+} from "./deal-fulfillment";
 import { marketplaceAmountToNano } from "./format";
 import { normalizePublicCoordinates } from "./geo";
 import { marketCategoryOptions } from "./listing-categories";
@@ -18,6 +22,7 @@ const listingFieldsSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   locationRadiusMeters: z.number().int().min(250).max(100_000).optional(),
+  fulfillmentMode: fulfillmentModeSchema,
   delivery: z.string().trim().min(2).max(80),
   mediaKey: listingMediaKeySchema.optional(),
 });
@@ -36,6 +41,17 @@ function addListingRelationshipIssues(
       code: "custom",
       path: ["type"],
       message: "Listing type does not match its section.",
+    });
+  }
+
+  try {
+    fulfillmentModeForListingType(value.type, value.fulfillmentMode);
+  } catch (error) {
+    context.addIssue({
+      code: "custom",
+      path: ["fulfillmentMode"],
+      message:
+        error instanceof Error ? error.message : "Fulfillment mode is invalid.",
     });
   }
 
@@ -106,6 +122,7 @@ export function prepareListingFields(payload: ListingInput) {
     latitudeE6: publicLocation?.latitudeE6 ?? null,
     longitudeE6: publicLocation?.longitudeE6 ?? null,
     locationRadiusMeters: publicLocation?.radiusMeters ?? null,
+    fulfillmentMode: payload.fulfillmentMode,
     delivery: payload.delivery,
   } as const;
 }

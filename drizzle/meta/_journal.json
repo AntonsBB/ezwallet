@@ -64,6 +64,27 @@
       "when": 1785358800000,
       "tag": "0008_completion_accounting",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785365400000,
+      "tag": "0009_chain_neutral_identities",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785369000000,
+      "tag": "0010_private_deal_fulfillment",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785371700000,
+      "tag": "0011_security_invariants",
+      "breakpoints": true
     }
   ]
 }
