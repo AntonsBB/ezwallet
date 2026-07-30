@@ -1,8 +1,8 @@
-import { Address, beginCell } from "@ton/core";
 import { and, eq, inArray } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
 import {
   applications,
+  dealFulfillments,
   dealEvents,
   deals,
   ledgerEntries,
@@ -10,7 +10,16 @@ import {
   users,
 } from "@/db/schema";
 import { authenticateRequest, authErrorResponse } from "@/lib/auth";
-import { splitPlatformFee } from "@/lib/format";
+import { calculateTransactionFees } from "@/lib/format";
+import {
+  inspectPaymentConfiguration,
+  normalizeTonAddress,
+} from "@/lib/payment-configuration";
+import { paymentReadinessMessage } from "@/lib/payment-readiness";
+import {
+  buildNativeTonEscrow,
+  DEFAULT_DELIVERY_WINDOW_SECONDS,
+} from "@/lib/ton-escrow";
 import {
   enforceRateLimit,
   noStoreJson,
@@ -18,20 +27,16 @@ import {
   rateLimitResponse,
 } from "@/lib/security";
 
-const LOCAL_TESTNET_FEE_ADDRESS =
-  "kQBERERERERERERERERERERERERERERERERERERERERERNHq";
-
-function payloadFor(comment: string) {
-  return beginCell()
-    .storeUint(0, 32)
-    .storeStringTail(comment)
-    .endCell()
-    .toBoc()
-    .toString("base64");
-}
-
-function normalizeAddress(value: string, testnet: boolean) {
-  return Address.parse(value).toString({ bounceable: false, testOnly: testnet });
+function isActiveDealConflict(error: unknown) {
+  const message =
+    error instanceof Error
+      ? `${error.message} ${String(error.cause ?? "")}`
+      : String(error);
+  return (
+    message.includes("deals_listing_active_idx") ||
+    message.includes("UNIQUE constraint failed: deals.listing_id") ||
+    message.includes("deal_listing_not_eligible")
+  );
 }
 
 export async function POST(
@@ -52,8 +57,10 @@ export async function POST(
         listingOwnerId: listings.ownerId,
         listingStatus: listings.status,
         listingType: listings.type,
+        listingModerationStatus: listings.moderationStatus,
         applicantId: applications.applicantId,
         offerNano: applications.offerNano,
+        applicantModerationStatus: users.moderationStatus,
         sellerWalletAddress: users.walletAddress,
         sellerWalletNetwork: users.walletNetwork,
         sellerWalletVerifiedAt: users.walletVerifiedAt,
@@ -68,9 +75,17 @@ export async function POST(
       application.listingOwnerId !== buyer.id ||
       application.listingType !== "job" ||
       application.listingStatus !== "active" ||
+      application.listingModerationStatus !== "approved" ||
+      application.applicantModerationStatus !== "active" ||
       application.status !== "sent"
     ) {
       return noStoreJson({ error: "Application not found." }, { status: 404 });
+    }
+    if (buyer.moderationStatus !== "active") {
+      return noStoreJson(
+        { error: "This profile cannot hire right now." },
+        { status: 403 }
+      );
     }
     if (!buyer.walletAddress || !buyer.walletVerifiedAt || !buyer.walletNetwork) {
       return noStoreJson(
@@ -101,36 +116,45 @@ export async function POST(
         { status: 409 }
       );
     }
-    const localPreview = ["localhost", "127.0.0.1", "terminal.local"].includes(
-      new URL(request.url).hostname
-    );
-    const feeAddress =
-      getBinding("PLATFORM_FEE_ADDRESS") ??
-      (localPreview ? LOCAL_TESTNET_FEE_ADDRESS : undefined);
-    if (!feeAddress) {
+    const paymentConfiguration = inspectPaymentConfiguration({
+      network,
+      platformFeeAddress: getBinding("PLATFORM_FEE_ADDRESS"),
+      arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
+    });
+    if (!paymentConfiguration.ready) {
       return noStoreJson(
-        { error: "Payments are paused until the platform fee wallet is configured." },
+        {
+          error: paymentReadinessMessage(
+            paymentConfiguration.blockers,
+            network
+          ),
+        },
         { status: 503 }
       );
     }
 
-    const buyerWalletAddress = normalizeAddress(buyer.walletAddress, testnet);
-    const sellerWalletAddress = normalizeAddress(
-      application.sellerWalletAddress,
-      testnet
+    const buyerWalletAddress = normalizeTonAddress(
+      buyer.walletAddress,
+      network
     );
-    const platformWalletAddress = normalizeAddress(feeAddress, testnet);
+    const sellerWalletAddress = normalizeTonAddress(
+      application.sellerWalletAddress,
+      network
+    );
+    const platformWalletAddress = paymentConfiguration.platformWalletAddress;
+    const arbitratorWalletAddress =
+      paymentConfiguration.arbitratorWalletAddress;
     const [existing] = await db
       .select({ id: deals.id })
       .from(deals)
       .where(
         and(
           eq(deals.listingId, application.listingId),
-          eq(deals.buyerId, buyer.id),
           inArray(deals.status, [
             "pending_wallet",
             "payment_submitted",
             "awaiting_delivery",
+            "disputed",
           ])
         )
       )
@@ -142,26 +166,67 @@ export async function POST(
       );
     }
 
-    const grossNano = BigInt(application.offerNano);
-    const { platformFeeNano, sellerAmountNano } =
-      splitPlatformFee(grossNano);
+    const baseNano = BigInt(application.offerNano);
+    const {
+      buyerFeeNano,
+      sellerFeeNano,
+      buyerTotalNano,
+      platformFeeNano,
+      sellerAmountNano,
+    } = calculateTransactionFees(baseNano);
     const dealId = crypto.randomUUID();
     const now = new Date().toISOString();
+    const deliveryDeadlineUnix =
+      Math.floor(Date.now() / 1000) + DEFAULT_DELIVERY_WINDOW_SECONDS;
+    const escrow = buildNativeTonEscrow({
+      dealId,
+      buyerAddress: buyerWalletAddress,
+      sellerAddress: sellerWalletAddress,
+      arbitratorAddress: arbitratorWalletAddress,
+      platformAddress: platformWalletAddress,
+      baseAmountNano: baseNano,
+      buyerFeeNano,
+      sellerFeeNano,
+      buyerTotalNano,
+      sellerAmountNano,
+      platformFeeNano,
+      deliveryDeadlineUnix,
+      network,
+    });
     await db.batch([
       db.insert(deals).values({
         id: dealId,
         listingId: application.listingId,
+        applicationId: application.id,
         buyerId: buyer.id,
         sellerId: application.applicantId,
         buyerWalletAddress,
         sellerWalletAddress,
         platformWalletAddress,
-        grossNano: grossNano.toString(),
+        arbitratorWalletAddress,
+        asset: "TON",
+        grossNano: baseNano.toString(),
+        buyerFeeNano: buyerFeeNano.toString(),
+        sellerFeeNano: sellerFeeNano.toString(),
+        buyerTotalNano: buyerTotalNano.toString(),
         platformFeeNano: platformFeeNano.toString(),
         sellerAmountNano: sellerAmountNano.toString(),
         feeBps: 100,
         network,
+        escrowAddress: escrow.address,
+        escrowCodeHash: escrow.codeHash,
+        escrowDataHash: escrow.dataHash,
+        escrowFundingAmountNano: escrow.fundingAmountNano.toString(),
+        escrowStatus: "awaiting_funding",
+        deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
+        reviewWindowSeconds: escrow.reviewWindowSeconds,
         status: "pending_wallet",
+        createdAt: now,
+        updatedAt: now,
+      }),
+      db.insert(dealFulfillments).values({
+        dealId,
+        mode: "service",
         createdAt: now,
         updatedAt: now,
       }),
@@ -171,7 +236,7 @@ export async function POST(
           dealId,
           accountUserId: buyer.id,
           kind: "buyer_payment",
-          amountNano: `-${grossNano}`,
+          amountNano: `-${buyerTotalNano}`,
           status: "created",
           createdAt: now,
           updatedAt: now,
@@ -207,7 +272,14 @@ export async function POST(
         actorUserId: buyer.id,
         type: "application_accepted",
         toStatus: "pending_wallet",
-        detail: JSON.stringify({ applicationId: id }),
+        detail: JSON.stringify({
+          applicationId: id,
+          feeBps: 100,
+          buyerFeeNano: buyerFeeNano.toString(),
+          sellerFeeNano: sellerFeeNano.toString(),
+          escrowAddress: escrow.address,
+          asset: "TON",
+        }),
         createdAt: now,
       }),
     ]);
@@ -217,9 +289,18 @@ export async function POST(
         deal: {
           id: dealId,
           title: application.listingTitle,
-          grossNano: grossNano.toString(),
+          grossNano: baseNano.toString(),
+          buyerFeeNano: buyerFeeNano.toString(),
+          sellerFeeNano: sellerFeeNano.toString(),
+          buyerTotalNano: buyerTotalNano.toString(),
           platformFeeNano: platformFeeNano.toString(),
           sellerAmountNano: sellerAmountNano.toString(),
+          asset: "TON",
+          escrowAddress: escrow.address,
+          escrowFundingAmountNano: escrow.fundingAmountNano.toString(),
+          deliveryDeadlineUnix: escrow.deliveryDeadlineUnix,
+          reviewWindowSeconds: escrow.reviewWindowSeconds,
+          fulfillmentMode: "service",
         },
         transaction: {
           validUntil: Math.floor(Date.now() / 1000) + 300,
@@ -227,14 +308,10 @@ export async function POST(
           from: buyerWalletAddress,
           messages: [
             {
-              address: sellerWalletAddress,
-              amount: sellerAmountNano.toString(),
-              payload: payloadFor(`EZW:${dealId}:SELLER`),
-            },
-            {
-              address: platformWalletAddress,
-              amount: platformFeeNano.toString(),
-              payload: payloadFor(`EZW:${dealId}:FEE`),
+              address: escrow.address,
+              amount: escrow.fundingAmountNano.toString(),
+              stateInit: escrow.stateInit,
+              payload: escrow.fundingPayload,
             },
           ],
         },
@@ -243,6 +320,12 @@ export async function POST(
     );
   } catch (error) {
     if (error instanceof RateLimitError) return rateLimitResponse(error);
+    if (isActiveDealConflict(error)) {
+      return noStoreJson(
+        { error: "This job already has an active deal." },
+        { status: 409 }
+      );
+    }
     return authErrorResponse(error);
   }
 }

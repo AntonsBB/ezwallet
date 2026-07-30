@@ -10,10 +10,7 @@ export function EzWalletProviders({
   children: React.ReactNode;
 }) {
   return (
-    <TonConnectUIProvider
-      manifestUrl={manifestUrl}
-      actionsConfiguration={{ twaReturnUrl: "https://t.me/ezwallet" }}
-    >
+    <TonConnectUIProvider manifestUrl={manifestUrl}>
       {children}
     </TonConnectUIProvider>
   );

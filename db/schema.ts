@@ -11,7 +11,7 @@ export const users = sqliteTable(
   "users",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    telegramId: text("telegram_id").notNull(),
+    telegramId: text("telegram_id"),
     username: text("username"),
     displayName: text("display_name").notNull(),
     photoUrl: text("photo_url"),
@@ -33,7 +33,114 @@ export const users = sqliteTable(
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
-  (table) => [uniqueIndex("users_telegram_id_idx").on(table.telegramId)]
+  (table) => [
+    uniqueIndex("users_telegram_id_idx").on(table.telegramId),
+    uniqueIndex("users_wallet_identity_idx")
+      .on(table.walletNetwork, table.walletAddress)
+      .where(
+        sql`${table.walletNetwork} IS NOT NULL AND ${table.walletAddress} IS NOT NULL`
+      ),
+  ]
+);
+
+export const accountIdentities = sqliteTable(
+  "account_identities",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    provider: text("provider", { enum: ["ton", "telegram"] }).notNull(),
+    namespace: text("namespace").notNull(),
+    subject: text("subject").notNull(),
+    proofMethod: text("proof_method", {
+      enum: ["ton_proof", "telegram_bot_claim", "legacy_import"],
+    }).notNull(),
+    verifiedAt: text("verified_at").notNull(),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("account_identities_provider_subject_idx").on(
+      table.provider,
+      table.namespace,
+      table.subject
+    ),
+    uniqueIndex("account_identities_user_provider_idx").on(
+      table.userId,
+      table.provider,
+      table.namespace
+    ),
+    index("account_identities_user_idx").on(
+      table.userId,
+      table.provider,
+      table.revokedAt
+    ),
+  ]
+);
+
+export const identityLinkTickets = sqliteTable(
+  "identity_link_tickets",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    sourceIdentityId: text("source_identity_id")
+      .notNull()
+      .references(() => accountIdentities.id),
+    secretHash: text("secret_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    exchangedChallengeId: text("exchanged_challenge_id"),
+    usedAt: text("used_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("identity_link_tickets_secret_idx").on(table.secretHash),
+    uniqueIndex("identity_link_tickets_challenge_idx")
+      .on(table.exchangedChallengeId)
+      .where(sql`${table.exchangedChallengeId} IS NOT NULL`),
+    index("identity_link_tickets_user_idx").on(table.userId, table.createdAt),
+    index("identity_link_tickets_expiry_idx").on(table.expiresAt),
+  ]
+);
+
+export const paymentRailRecipients = sqliteTable(
+  "payment_rail_recipients",
+  {
+    id: text("id").primaryKey(),
+    rail: text("rail").notNull(),
+    network: text("network").notNull(),
+    asset: text("asset").notNull(),
+    role: text("role", {
+      enum: ["platform_fee", "arbitrator_candidate"],
+    }).notNull(),
+    label: text("label").notNull(),
+    address: text("address").notNull(),
+    status: text("status", {
+      enum: ["unverified", "verified", "disabled"],
+    })
+      .notNull()
+      .default("unverified"),
+    verifiedAt: text("verified_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("payment_rail_recipients_scope_idx").on(
+      table.rail,
+      table.network,
+      table.asset,
+      table.role,
+      table.label
+    ),
+    index("payment_rail_recipients_status_idx").on(
+      table.status,
+      table.rail,
+      table.network
+    ),
+  ]
 );
 
 export const listings = sqliteTable(
@@ -55,6 +162,14 @@ export const listings = sqliteTable(
     imageUrl: text("image_url"),
     mediaKey: text("media_key"),
     location: text("location").notNull().default("Remote"),
+    latitudeE6: integer("latitude_e6"),
+    longitudeE6: integer("longitude_e6"),
+    locationRadiusMeters: integer("location_radius_meters"),
+    fulfillmentMode: text("fulfillment_mode", {
+      enum: ["shipping", "pickup", "digital", "service"],
+    })
+      .notNull()
+      .default("service"),
     delivery: text("delivery").notNull().default("Arrange in chat"),
     status: text("status", {
       enum: ["draft", "active", "paused", "sold", "closed", "removed"],
@@ -71,6 +186,12 @@ export const listings = sqliteTable(
   },
   (table) => [
     index("listings_section_status_idx").on(table.section, table.status),
+    index("listings_geo_idx").on(
+      table.section,
+      table.status,
+      table.latitudeE6,
+      table.longitudeE6
+    ),
     index("listings_owner_idx").on(table.ownerId),
   ]
 );
@@ -109,6 +230,7 @@ export const deals = sqliteTable(
     listingId: text("listing_id")
       .notNull()
       .references(() => listings.id),
+    applicationId: text("application_id").references(() => applications.id),
     buyerId: integer("buyer_id")
       .notNull()
       .references(() => users.id),
@@ -118,11 +240,38 @@ export const deals = sqliteTable(
     buyerWalletAddress: text("buyer_wallet_address").notNull(),
     sellerWalletAddress: text("seller_wallet_address").notNull(),
     platformWalletAddress: text("platform_wallet_address").notNull(),
+    arbitratorWalletAddress: text("arbitrator_wallet_address"),
+    asset: text("asset", { enum: ["TON"] }).notNull().default("TON"),
     grossNano: text("gross_nano").notNull(),
+    buyerFeeNano: text("buyer_fee_nano").notNull().default("0"),
+    sellerFeeNano: text("seller_fee_nano").notNull().default("0"),
+    buyerTotalNano: text("buyer_total_nano").notNull().default("0"),
     platformFeeNano: text("platform_fee_nano").notNull(),
     sellerAmountNano: text("seller_amount_nano").notNull(),
     feeBps: integer("fee_bps").notNull().default(100),
     network: text("network", { enum: ["mainnet", "testnet"] }).notNull(),
+    escrowAddress: text("escrow_address"),
+    escrowCodeHash: text("escrow_code_hash"),
+    escrowDataHash: text("escrow_data_hash"),
+    escrowFundingAmountNano: text("escrow_funding_amount_nano"),
+    escrowFundingTxHash: text("escrow_funding_tx_hash"),
+    escrowSettlementTxHash: text("escrow_settlement_tx_hash"),
+    escrowStatus: text("escrow_status", {
+      enum: [
+        "legacy",
+        "awaiting_funding",
+        "funded",
+        "delivered",
+        "disputed",
+        "released",
+        "refunded",
+      ],
+    })
+      .notNull()
+      .default("legacy"),
+    deliveryDeadlineUnix: integer("delivery_deadline_unix"),
+    reviewWindowSeconds: integer("review_window_seconds"),
+    reviewDeadlineUnix: integer("review_deadline_unix"),
     status: text("status", {
       enum: [
         "pending_wallet",
@@ -142,12 +291,84 @@ export const deals = sqliteTable(
     submittedAt: text("submitted_at"),
     verifiedAt: text("verified_at"),
     completedAt: text("completed_at"),
+    completionCountedAt: text("completion_counted_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
     index("deals_buyer_idx").on(table.buyerId, table.createdAt),
     index("deals_seller_idx").on(table.sellerId, table.createdAt),
+    uniqueIndex("deals_listing_active_idx")
+      .on(table.listingId)
+      .where(
+        sql`${table.status} IN ('pending_wallet', 'payment_submitted', 'awaiting_delivery', 'disputed')`
+      ),
+    uniqueIndex("deals_escrow_address_idx").on(table.escrowAddress),
+  ]
+);
+
+export const dealFulfillments = sqliteTable(
+  "deal_fulfillments",
+  {
+    dealId: text("deal_id")
+      .primaryKey()
+      .references(() => deals.id),
+    mode: text("mode", {
+      enum: ["shipping", "pickup", "digital", "service"],
+    }).notNull(),
+    deliveryAddressCiphertext: text("delivery_address_ciphertext"),
+    deliveryAddressVersion: integer("delivery_address_version"),
+    carrier: text("carrier"),
+    trackingCode: text("tracking_code"),
+    shippedAt: text("shipped_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("deal_fulfillments_mode_idx").on(table.mode, table.shippedAt),
+  ]
+);
+
+export const dealChainActions = sqliteTable(
+  "deal_chain_actions",
+  {
+    id: text("id").primaryKey(),
+    dealId: text("deal_id")
+      .notNull()
+      .references(() => deals.id),
+    actorUserId: integer("actor_user_id").references(() => users.id),
+    actorWalletAddress: text("actor_wallet_address").notNull(),
+    kind: text("kind", {
+      enum: [
+        "mark_delivered",
+        "confirm_received",
+        "open_dispute",
+        "refund_expired",
+        "release_after_review",
+        "resolve_release",
+        "resolve_refund",
+      ],
+    }).notNull(),
+    queryId: text("query_id").notNull(),
+    detailHash: text("detail_hash").notNull().default("0"),
+    payloadBase64: text("payload_base64").notNull(),
+    messageValueNano: text("message_value_nano").notNull(),
+    status: text("status", {
+      enum: ["prepared", "submitted", "confirmed", "failed", "expired"],
+    })
+      .notNull()
+      .default("prepared"),
+    transactionRef: text("transaction_ref"),
+    submissionBocDigest: text("submission_boc_digest"),
+    txHash: text("tx_hash"),
+    submittedAt: text("submitted_at"),
+    confirmedAt: text("confirmed_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("deal_chain_actions_deal_idx").on(table.dealId, table.createdAt),
+    index("deal_chain_actions_status_idx").on(table.status, table.submittedAt),
   ]
 );
 
@@ -236,6 +457,89 @@ export const walletChallenges = sqliteTable(
   ]
 );
 
+export const walletAuthChallenges = sqliteTable(
+  "wallet_auth_challenges",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    linkTicketId: text("link_ticket_id").references(
+      () => identityLinkTickets.id
+    ),
+    payload: text("payload").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    usedAt: text("used_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("wallet_auth_challenges_payload_idx").on(table.payload),
+    index("wallet_auth_challenges_user_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+    index("wallet_auth_challenges_expiry_idx").on(table.expiresAt),
+  ]
+);
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    authMethod: text("auth_method", { enum: ["wallet"] }).notNull(),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("auth_sessions_user_idx").on(table.userId, table.createdAt),
+    index("auth_sessions_expiry_idx").on(table.expiresAt),
+  ]
+);
+
+export const verificationAttestations = sqliteTable(
+  "verification_attestations",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind", {
+      enum: ["identity", "address", "business", "sanctions_screen"],
+    }).notNull(),
+    status: text("status", {
+      enum: [
+        "pending",
+        "verified",
+        "rejected",
+        "expired",
+        "revoked",
+        "needs_review",
+      ],
+    }).notNull(),
+    provider: text("provider").notNull(),
+    providerReferenceHash: text("provider_reference_hash").notNull(),
+    assuranceLevel: integer("assurance_level").notNull().default(1),
+    verifiedAt: text("verified_at"),
+    expiresAt: text("expires_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("verification_provider_reference_idx").on(
+      table.provider,
+      table.providerReferenceHash
+    ),
+    index("verification_user_status_idx").on(
+      table.userId,
+      table.status,
+      table.expiresAt
+    ),
+  ]
+);
+
 export const reports = sqliteTable(
   "reports",
   {
@@ -275,6 +579,29 @@ export const blockedUsers = sqliteTable(
   },
   (table) => [
     uniqueIndex("blocked_users_pair_idx").on(table.blockerId, table.blockedId),
+  ]
+);
+
+export const listingFavorites = sqliteTable(
+  "listing_favorites",
+  {
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    listingId: text("listing_id")
+      .notNull()
+      .references(() => listings.id),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("listing_favorites_user_listing_idx").on(
+      table.userId,
+      table.listingId
+    ),
+    index("listing_favorites_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
   ]
 );
 

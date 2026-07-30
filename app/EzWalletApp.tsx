@@ -10,40 +10,85 @@ import {
   ArrowRight,
   BadgeCheck,
   BanknoteArrowDown,
+  Bike,
   BriefcaseBusiness,
+  CarFront,
   Check,
   ChevronRight,
   CircleHelp,
   Clock3,
+  Crosshair,
   Heart,
+  House,
   Info,
+  Laptop,
   MapPin,
-  MessageCircle,
   PackageCheck,
+  Pause,
+  PencilLine,
+  Play,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
+  Shapes,
   ShieldCheck,
+  Shirt,
   ShoppingBag,
   Sparkles,
   Star,
   Store,
   UserRound,
   WalletCards,
+  WifiOff,
   X,
   Zap,
+  FileDown,
+  LockKeyhole,
+  Target,
+  Trophy,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { nanoToTon } from "@/lib/format";
+import { calculateTransactionFees, nanoToTon } from "@/lib/format";
+import { normalizePublicCoordinates } from "@/lib/geo";
+import { IDENTITY_LINK_TOKEN_PATTERN } from "@/lib/identity-link";
+import { marketCategoryOptions } from "@/lib/listing-categories";
+import {
+  paymentReadinessMessage,
+  type PaymentBlocker,
+} from "@/lib/payment-readiness";
+import {
+  activeMarketFilterCount,
+  defaultMarketFilterForm,
+  filterAndSortMarketListings,
+  parseMarketPriceRange,
+  type MarketFilterForm,
+  type MarketListingType,
+  type MarketSortOrder,
+} from "@/lib/market-discovery";
+import {
+  approximateDistance,
+  formatApproximateDistance,
+  sortListingsByDistance,
+} from "@/lib/work-discovery";
+import { WorkMap, type PublicMapPoint } from "@/app/WorkMap";
 
 type Tab = "market" | "work" | "wallet" | "profile";
 type SheetName =
   | "listing"
   | "create"
+  | "edit"
   | "apply"
+  | "checkout"
   | "payment"
   | "profile"
+  | "storefront"
+  | "verification"
+  | "listings"
+  | "market-filters"
   | "report"
+  | "dispute"
+  | "fulfillment"
   | null;
 
 type Listing = {
@@ -57,6 +102,10 @@ type Listing = {
   currency: string;
   imageUrl: string | null;
   location: string;
+  latitudeE6: number | null;
+  longitudeE6: number | null;
+  locationRadiusMeters: number | null;
+  fulfillmentMode: "shipping" | "pickup" | "digital" | "service";
   delivery: string;
   status: string;
   createdAt: string;
@@ -67,11 +116,13 @@ type Listing = {
   ownerRatingMilli: number;
   ownerReviewCount: number;
   ownerDealsCompleted: number;
+  ownerWalletVerified: boolean;
+  ownerWalletNetwork: "mainnet" | "testnet" | null;
 };
 
 type User = {
   id: number;
-  telegramId: string;
+  telegramId: string | null;
   username: string | null;
   displayName: string;
   photoUrl: string | null;
@@ -80,10 +131,39 @@ type User = {
   walletAddress: string | null;
   walletNetwork: "mainnet" | "testnet" | null;
   walletVerifiedAt: string | null;
+  verificationLevel:
+    | "unverified"
+    | "wallet"
+    | "identity"
+    | "enhanced"
+    | "business";
+  verificationLabel: string;
   ratingMilli: number;
   reviewCount: number;
   dealsCompleted: number;
   updatedAt: string;
+};
+
+type PublicStorefront = {
+  profile: {
+    id: number;
+    displayName: string;
+    photoUrl: string | null;
+    bio: string;
+    walletVerified: boolean;
+    verificationLevel:
+      | "unverified"
+      | "wallet"
+      | "identity"
+      | "enhanced"
+      | "business";
+    verificationLabel: string;
+    ratingMilli: number;
+    reviewCount: number;
+    dealsCompleted: number;
+    memberSince: string;
+  };
+  listings: Listing[];
 };
 
 type Deal = {
@@ -92,8 +172,29 @@ type Deal = {
   title: string;
   imageUrl: string | null;
   grossNano: string;
+  buyerFeeNano: string;
+  sellerFeeNano: string;
+  buyerTotalNano: string;
   platformFeeNano: string;
   sellerAmountNano: string;
+  asset: "TON";
+  escrowAddress: string | null;
+  escrowStatus:
+    | "legacy"
+    | "awaiting_funding"
+    | "funded"
+    | "delivered"
+    | "disputed"
+    | "released"
+    | "refunded";
+  escrowFundingAmountNano: string | null;
+  deliveryDeadlineUnix: number | null;
+  reviewWindowSeconds: number | null;
+  reviewDeadlineUnix: number | null;
+  fulfillmentMode: "shipping" | "pickup" | "digital" | "service" | null;
+  carrier: string | null;
+  trackingCode: string | null;
+  shippedAt: string | null;
   status: string;
   network: "mainnet" | "testnet";
   transactionRef: string | null;
@@ -103,17 +204,50 @@ type Deal = {
   createdAt: string;
 };
 
+type FulfillmentDetail = {
+  mode: "shipping" | "pickup" | "digital" | "service";
+  deliveryAddress: DeliveryAddressForm | null;
+  addressAvailable: boolean;
+  addressVisible: boolean;
+  carrier: string | null;
+  trackingCode: string | null;
+  shippedAt: string | null;
+  updatedAt: string;
+};
+
 type ApplicationSummary = {
   id: string;
   listingId: string;
   status: string;
 };
 
+type OwnerListing = Pick<
+  Listing,
+  | "id"
+  | "section"
+  | "type"
+  | "title"
+  | "description"
+  | "category"
+  | "priceNano"
+  | "imageUrl"
+  | "location"
+  | "latitudeE6"
+  | "longitudeE6"
+  | "locationRadiusMeters"
+  | "fulfillmentMode"
+  | "delivery"
+  | "status"
+  | "createdAt"
+> & {
+  updatedAt: string;
+};
+
 type AppConfig = {
   feeBps: number;
   network: "mainnet" | "testnet";
   paymentsReady: boolean;
-  telegramReady: boolean;
+  paymentBlockers: PaymentBlocker[];
 };
 
 type TelegramWebApp = {
@@ -131,6 +265,7 @@ type TelegramWebApp = {
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
   disableVerticalSwipes?(): void;
+  openTelegramLink?(url: string): void;
   HapticFeedback?: {
     impactOccurred(style: "light" | "medium" | "heavy"): void;
     notificationOccurred(type: "success" | "warning" | "error"): void;
@@ -143,8 +278,18 @@ declare global {
   }
 }
 
-const marketCategories = ["All", "Physical", "Digital", "Electronics", "Mobility"];
-const workCategories = ["All", "Services", "Jobs", "Remote", "Today"];
+const workCategories = ["All", "Services", "Jobs", "Remote", "Today", "Saved"];
+const marketCategoryCards = [
+  { label: "All", icon: Store },
+  { label: "Electronics", icon: Laptop },
+  { label: "Mobility", icon: Bike },
+  { label: "Vehicles", icon: CarFront },
+  { label: "Home", icon: House },
+  { label: "Fashion", icon: Shirt },
+  { label: "Digital", icon: FileDown },
+  { label: "Other", icon: Shapes },
+] as const;
+const escrowFundingReserveNano = 120_000_000n;
 
 function compactAddress(address: string) {
   if (address.length < 14) return address;
@@ -153,6 +298,10 @@ function compactAddress(address: string) {
 
 function formatRating(ratingMilli: number) {
   return (ratingMilli / 1000).toFixed(1);
+}
+
+function reputationLabel(ratingMilli: number, reviewCount: number) {
+  return reviewCount > 0 ? formatRating(ratingMilli) : "New seller";
 }
 
 function statusLabel(status: string) {
@@ -167,16 +316,40 @@ function statusLabel(status: string) {
   return labels[status] ?? status.replaceAll("_", " ");
 }
 
+function listingStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    draft: "Draft",
+    active: "Live",
+    paused: "Paused",
+    sold: "Sold",
+    closed: "Closed",
+    removed: "Removed",
+  };
+  return labels[status] ?? status.replaceAll("_", " ");
+}
+
+function escrowStatusLabel(deal: Deal) {
+  if (deal.status === "awaiting_delivery" && deal.escrowStatus === "funded") {
+    return "Funded escrow · awaiting delivery";
+  }
+  if (deal.status === "awaiting_delivery" && deal.escrowStatus === "delivered") {
+    return "Delivered · awaiting approval";
+  }
+  if (deal.escrowStatus === "released") return "Released on TON";
+  if (deal.escrowStatus === "refunded") return "Refunded on TON";
+  return statusLabel(deal.status);
+}
+
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="brand" aria-label="EzWallet">
+    <div className="brand" aria-label="Easy Wallet">
       <img
         className="brand-mark"
         src="/brand/ezwallet-logo.png"
         alt=""
         aria-hidden="true"
       />
-      {!compact && <span>EzWallet</span>}
+      {!compact && <span>Easy Wallet</span>}
     </div>
   );
 }
@@ -242,20 +415,31 @@ function BottomNavigation({
 function AppHeader({
   session,
   connected,
+  onWallet,
   onCreate,
 }: {
   session: User | null;
   connected: boolean;
+  onWallet: () => void;
   onCreate: () => void;
 }) {
   return (
     <header className="app-header">
       <Brand />
       <div className="header-actions">
-        <span className={connected ? "network-pill is-online" : "network-pill"}>
+        <button
+          type="button"
+          className={connected ? "network-pill is-online" : "network-pill"}
+          onClick={onWallet}
+          aria-label={
+            connected
+              ? "Open wallet and account details"
+              : "Connect a wallet to create an account"
+          }
+        >
           <i />
-          {connected ? "TON connected" : "TON wallet"}
-        </span>
+          {connected ? "Wallet connected" : "Connect wallet"}
+        </button>
         <button
           type="button"
           className="header-avatar"
@@ -296,47 +480,87 @@ function ListingCard({
   listing,
   onOpen,
   wide = false,
+  proximity = null,
+  saved = false,
+  saving = false,
+  onToggleSave,
 }: {
   listing: Listing;
   onOpen: (listing: Listing) => void;
   wide?: boolean;
+  proximity?: string | null;
+  saved?: boolean;
+  saving?: boolean;
+  onToggleSave?: (listing: Listing) => void;
 }) {
   return (
-    <button
-      type="button"
+    <article
       className={wide ? "listing-card listing-card-wide" : "listing-card"}
-      onClick={() => onOpen(listing)}
     >
-      <span
-        className={
-          listing.imageUrl ? "listing-media" : "listing-media listing-media-empty"
-        }
+      <button
+        type="button"
+        className="listing-card-open"
+        onClick={() => onOpen(listing)}
+        aria-label={`Open ${listing.title}`}
       >
-        {listing.imageUrl ? (
-          <img src={listing.imageUrl} alt="" draggable={false} />
-        ) : (
-          <BriefcaseBusiness size={30} />
-        )}
-        <span className="listing-type">{listing.type}</span>
-        <span className="save-button" aria-hidden="true">
-          <Heart size={15} />
+        <span
+          className={
+            listing.imageUrl
+              ? "listing-media"
+              : "listing-media listing-media-empty"
+          }
+        >
+          {listing.imageUrl ? (
+            <img src={listing.imageUrl} alt="" draggable={false} />
+          ) : (
+            <BriefcaseBusiness size={30} />
+          )}
+          <span className="listing-type">{listing.type}</span>
         </span>
-      </span>
-      <span className="listing-copy">
-        <span className="listing-category">{listing.category}</span>
-        <strong>{listing.title}</strong>
-        <span className="listing-meta">
-          <Star size={12} fill="currentColor" />{" "}
-          {formatRating(listing.ownerRatingMilli)}
-          <i>·</i>
-          {listing.location}
+        <span className="listing-copy">
+          <span className="listing-category">{listing.category}</span>
+          <strong>{listing.title}</strong>
+          <span className="listing-meta">
+            <Star
+              size={12}
+              fill={listing.ownerReviewCount > 0 ? "currentColor" : "none"}
+            />{" "}
+            {reputationLabel(
+              listing.ownerRatingMilli,
+              listing.ownerReviewCount
+            )}
+            <i>·</i>
+            {listing.location}
+            {proximity && (
+              <>
+                <i>·</i>
+                {proximity}
+              </>
+            )}
+          </span>
+          <span className="listing-footer">
+            <b>{nanoToTon(listing.priceNano)} TON</b>
+            <span>{listing.type === "job" ? "budget" : listing.delivery}</span>
+          </span>
         </span>
-        <span className="listing-footer">
-          <b>{nanoToTon(listing.priceNano)} TON</b>
-          <span>{listing.type === "job" ? "budget" : listing.delivery}</span>
-        </span>
-      </span>
-    </button>
+      </button>
+      {onToggleSave && (
+        <button
+          type="button"
+          className={saved ? "save-button is-saved" : "save-button"}
+          aria-label={
+            saved
+              ? `Remove ${listing.title} from saved`
+              : `Save ${listing.title}`
+          }
+          aria-pressed={saved}
+          disabled={saving}
+          onClick={() => onToggleSave(listing)}
+        >
+          <Heart size={15} fill={saved ? "currentColor" : "none"} />
+        </button>
+      )}
+    </article>
   );
 }
 
@@ -369,10 +593,14 @@ function SearchField({
   query,
   onChange,
   placeholder,
+  onFilter,
+  activeFilterCount = 0,
 }: {
   query: string;
   onChange: (value: string) => void;
   placeholder: string;
+  onFilter?: () => void;
+  activeFilterCount?: number;
 }) {
   return (
     <label className="search-field">
@@ -383,9 +611,23 @@ function SearchField({
         placeholder={placeholder}
         aria-label={placeholder}
       />
-      <button type="button" aria-label="Search filters">
-        <Settings2 size={17} />
-      </button>
+      {onFilter && (
+        <button
+          type="button"
+          className={activeFilterCount > 0 ? "has-active-filters" : ""}
+          aria-label={
+            activeFilterCount > 0
+              ? `Market filters, ${activeFilterCount} active`
+              : "Market filters"
+          }
+          onClick={onFilter}
+        >
+          <Settings2 size={17} />
+          {activeFilterCount > 0 && (
+            <span aria-hidden="true">{activeFilterCount}</span>
+          )}
+        </button>
+      )}
     </label>
   );
 }
@@ -397,6 +639,19 @@ function MarketScreen({
   category,
   setCategory,
   onOpen,
+  onOpenFilters,
+  onResetFilters,
+  onCreate,
+  savedListingIds,
+  savingListingIds,
+  signedIn,
+  savedOnly,
+  savedCount,
+  totalListingCount,
+  advancedFilterCount,
+  favoritesAvailable,
+  onToggleSavedOnly,
+  onToggleSave,
 }: {
   listings: Listing[];
   query: string;
@@ -404,6 +659,19 @@ function MarketScreen({
   category: string;
   setCategory: (value: string) => void;
   onOpen: (listing: Listing) => void;
+  onOpenFilters: () => void;
+  onResetFilters: () => void;
+  onCreate: () => void;
+  savedListingIds: ReadonlySet<string>;
+  savingListingIds: ReadonlySet<string>;
+  signedIn: boolean;
+  savedOnly: boolean;
+  savedCount: number;
+  totalListingCount: number;
+  advancedFilterCount: number;
+  favoritesAvailable: boolean;
+  onToggleSavedOnly: () => void;
+  onToggleSave: (listing: Listing) => void;
 }) {
   return (
     <main className="screen market-screen">
@@ -424,30 +692,114 @@ function MarketScreen({
           query={query}
           onChange={setQuery}
           placeholder="Search the market"
+          onFilter={onOpenFilters}
+          activeFilterCount={advancedFilterCount}
         />
       </section>
 
-      <CategoryRail
-        categories={marketCategories}
-        selected={category}
-        onSelect={setCategory}
-      />
+      <section className="market-categories" aria-label="Marketplace categories">
+        <SectionHeading title="Browse categories" />
+        <div className="market-category-grid">
+          {marketCategoryCards.map(({ label, icon: Icon }) => (
+            <button
+              key={label}
+              type="button"
+              className={
+                category === label
+                  ? "market-category is-selected"
+                  : "market-category"
+              }
+              onClick={() => setCategory(label)}
+              aria-pressed={category === label}
+            >
+              <span>
+                <Icon size={18} />
+              </span>
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="market-saved-filter">
+        <button
+          type="button"
+          className={savedOnly ? "is-active" : ""}
+          aria-pressed={savedOnly}
+          disabled={!signedIn || !favoritesAvailable}
+          onClick={onToggleSavedOnly}
+        >
+          <Heart size={15} fill={savedOnly ? "currentColor" : "none"} />
+          Saved
+          <strong>{savedCount}</strong>
+        </button>
+        <span>
+          {!signedIn
+            ? "Connect a wallet to save listings"
+            : favoritesAvailable
+              ? "Synced to your wallet profile"
+              : "Saved listings are unavailable"}
+        </span>
+      </div>
+
+      {advancedFilterCount > 0 && (
+        <div className="market-active-filters" role="status">
+          <span>
+            <Settings2 size={14} />
+            {advancedFilterCount} advanced{" "}
+            {advancedFilterCount === 1 ? "filter" : "filters"}
+          </span>
+          <button type="button" onClick={onResetFilters}>
+            Clear
+          </button>
+        </div>
+      )}
 
       <section className="content-section">
         <SectionHeading
-          title="Fresh nearby"
+          title={savedOnly ? "Your saved listings" : "Fresh nearby"}
           action={`${listings.length} ${listings.length === 1 ? "listing" : "listings"}`}
         />
         <div className="listing-grid">
           {listings.map((listing) => (
-            <ListingCard key={listing.id} listing={listing} onOpen={onOpen} />
+            <ListingCard
+              key={listing.id}
+              listing={listing}
+              onOpen={onOpen}
+              saved={savedListingIds.has(listing.id)}
+              saving={savingListingIds.has(listing.id)}
+              onToggleSave={onToggleSave}
+            />
           ))}
         </div>
         {!listings.length && (
           <div className="empty-state">
-            <Search size={24} />
-            <strong>No matches yet</strong>
-            <p>Try another keyword or category.</p>
+            {savedOnly ? <Heart size={24} /> : <Search size={24} />}
+            <strong>
+              {savedOnly
+                ? "Nothing saved yet"
+                : totalListingCount === 0
+                  ? "No marketplace listings yet"
+                  : "No listings match"}
+            </strong>
+            <p>
+              {savedOnly
+                ? "Save a listing to keep it here."
+                : totalListingCount === 0
+                  ? "Only real published posts appear here."
+                  : "Clear or adjust the search, category, and filters."}
+            </p>
+            {!savedOnly && totalListingCount === 0 ? (
+              <button type="button" onClick={onCreate}>
+                <Plus size={14} /> Create the first listing
+              </button>
+            ) : (
+              !savedOnly && (
+                <button type="button" onClick={onResetFilters}>
+                  <X size={14} /> Clear search and filters
+                </button>
+              )
+            )}
           </div>
         )}
       </section>
@@ -457,7 +809,7 @@ function MarketScreen({
           <ShieldCheck size={22} />
         </div>
         <div>
-          <strong>Your keys never enter EzWallet.</strong>
+          <strong>Your keys never enter Easy Wallet.</strong>
           <p>
             You review and approve every TON transfer inside your connected
             wallet.
@@ -469,6 +821,155 @@ function MarketScreen({
   );
 }
 
+function MarketFiltersSheet({
+  open,
+  draft,
+  error,
+  resultCount,
+  onChange,
+  onClear,
+  onClose,
+  onApply,
+}: {
+  open: boolean;
+  draft: MarketFilterForm;
+  error: string;
+  resultCount: number | null;
+  onChange: (draft: MarketFilterForm) => void;
+  onClear: () => void;
+  onClose: () => void;
+  onApply: () => void;
+}) {
+  const typeOptions: Array<{
+    value: MarketListingType;
+    label: string;
+  }> = [
+    { value: "all", label: "All listings" },
+    { value: "physical", label: "Physical" },
+    { value: "digital", label: "Digital" },
+  ];
+  const normalizePriceInput = (value: string) =>
+    value.replace(/[^0-9.]/g, "").slice(0, 16);
+
+  return (
+    <BottomSheet open={open} onClose={onClose} title="Market filters">
+      <form
+        className="market-filter-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onApply();
+        }}
+      >
+        <div className="market-filter-intro">
+          <span className="eyebrow">Real listings only</span>
+          <p>
+            Narrow what is already published. Prices use exact TON amounts and
+            never change a seller&apos;s quote.
+          </p>
+        </div>
+
+        <fieldset>
+          <legend>Listing type</legend>
+          <div className="filter-choice-grid">
+            {typeOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={draft.type === option.value ? "is-selected" : ""}
+                aria-pressed={draft.type === option.value}
+                onClick={() => onChange({ ...draft, type: option.value })}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Price range</legend>
+          <div className="filter-price-grid">
+            <label>
+              <span>Minimum</span>
+              <div>
+                <input
+                  inputMode="decimal"
+                  value={draft.minPriceTon}
+                  placeholder="No minimum"
+                  aria-describedby={error ? "market-filter-error" : undefined}
+                  onChange={(event) =>
+                    onChange({
+                      ...draft,
+                      minPriceTon: normalizePriceInput(event.target.value),
+                    })
+                  }
+                />
+                <b>TON</b>
+              </div>
+            </label>
+            <label>
+              <span>Maximum</span>
+              <div>
+                <input
+                  inputMode="decimal"
+                  value={draft.maxPriceTon}
+                  placeholder="No maximum"
+                  aria-describedby={error ? "market-filter-error" : undefined}
+                  onChange={(event) =>
+                    onChange({
+                      ...draft,
+                      maxPriceTon: normalizePriceInput(event.target.value),
+                    })
+                  }
+                />
+                <b>TON</b>
+              </div>
+            </label>
+          </div>
+        </fieldset>
+
+        <label className="filter-sort-field">
+          <span>Sort results</span>
+          <select
+            value={draft.sort}
+            onChange={(event) =>
+              onChange({
+                ...draft,
+                sort: event.target.value as MarketSortOrder,
+              })
+            }
+          >
+            <option value="newest">Newest first</option>
+            <option value="price_low">Price: low to high</option>
+            <option value="price_high">Price: high to low</option>
+          </select>
+        </label>
+
+        {error ? (
+          <div id="market-filter-error" className="filter-validation" role="alert">
+            <Info size={16} />
+            {error}
+          </div>
+        ) : (
+          <div className="filter-result-preview" role="status">
+            <Search size={16} />
+            {resultCount} real{" "}
+            {resultCount === 1 ? "listing matches" : "listings match"}
+          </div>
+        )}
+
+        <div className="market-filter-actions">
+          <button type="button" onClick={onClear}>
+            Clear all
+          </button>
+          <button type="submit" disabled={Boolean(error)}>
+            Show {resultCount ?? 0} {resultCount === 1 ? "result" : "results"}
+          </button>
+        </div>
+      </form>
+    </BottomSheet>
+  );
+}
+
 function WorkScreen({
   listings,
   query,
@@ -477,6 +978,9 @@ function WorkScreen({
   setCategory,
   onOpen,
   onCreate,
+  savedListingIds,
+  savingListingIds,
+  onToggleSave,
 }: {
   listings: Listing[];
   query: string;
@@ -485,7 +989,26 @@ function WorkScreen({
   setCategory: (value: string) => void;
   onOpen: (listing: Listing) => void;
   onCreate: () => void;
+  savedListingIds: ReadonlySet<string>;
+  savingListingIds: ReadonlySet<string>;
+  onToggleSave: (listing: Listing) => void;
 }) {
+  const [referencePoint, setReferencePoint] =
+    useState<PublicMapPoint | null>(null);
+  const orderedListings = useMemo(
+    () => sortListingsByDistance(listings, referencePoint),
+    [listings, referencePoint]
+  );
+  const mappedListings = useMemo(
+    () =>
+      orderedListings.filter(
+        (listing) =>
+          listing.latitudeE6 !== null && listing.longitudeE6 !== null
+      ),
+    [orderedListings]
+  );
+  const remoteOrUnmappedCount = orderedListings.length - mappedListings.length;
+
   return (
     <main className="screen work-screen">
       <section className="work-hero">
@@ -517,35 +1040,118 @@ function WorkScreen({
         onSelect={setCategory}
       />
 
+      <section className="work-view-heading" aria-labelledby="work-view-title">
+        <div>
+          <span>Live mission map</span>
+          <h2 id="work-view-title">
+            {referencePoint
+              ? "Nearest opportunities first"
+              : "Pick a nearby mission"}
+          </h2>
+        </div>
+        <span className="mission-count">{mappedListings.length} mapped</span>
+      </section>
+
+      <WorkMap
+            listings={mappedListings}
+            referencePoint={referencePoint}
+            onReferencePointChange={setReferencePoint}
+            onOpen={(listingId) => {
+              const listing = orderedListings.find(
+                (candidate) => candidate.id === listingId
+              );
+              if (listing) onOpen(listing);
+            }}
+          />
+      {mappedListings.length > 0 && (
+            <section
+              className="work-map-results"
+              aria-label="Work shown on the map"
+            >
+              {mappedListings.map((listing) => {
+                const distance = formatApproximateDistance(
+                  approximateDistance(listing, referencePoint)
+                );
+                return (
+                  <button
+                    key={listing.id}
+                    type="button"
+                    onClick={() => onOpen(listing)}
+                  >
+                    <span
+                      className={
+                        listing.type === "job"
+                          ? "work-result-icon is-job"
+                          : "work-result-icon"
+                      }
+                    >
+                      <BriefcaseBusiness size={16} />
+                    </span>
+                    <span>
+                      <small>
+                        {listing.type} · {listing.location}
+                      </small>
+                      <strong>{listing.title}</strong>
+                      <em>
+                        {distance ??
+                          `${listing.locationRadiusMeters ?? 1_000} m approximate area`}
+                      </em>
+                    </span>
+                    <b>{nanoToTon(listing.priceNano)} TON</b>
+                  </button>
+                );
+              })}
+            </section>
+      )}
+      {remoteOrUnmappedCount > 0 && (
+        <a className="unmapped-work-link" href="#mission-board">
+          {remoteOrUnmappedCount} remote or area-free{" "}
+          {remoteOrUnmappedCount === 1 ? "mission" : "missions"} below
+          <ChevronRight size={15} />
+        </a>
+      )}
+
       <section className="work-cta">
         <div>
           <span>Need something done?</span>
-          <strong>Post a clear brief in two minutes.</strong>
+          <strong>Launch a clear job or service mission.</strong>
         </div>
         <button type="button" onClick={onCreate}>
-          Post work <Plus size={16} />
+          Post a mission <Plus size={16} />
         </button>
       </section>
 
-      <section className="content-section work-list-section">
-        <SectionHeading title="Recommended for you" />
-        <div className="work-list">
-          {listings.map((listing) => (
-            <ListingCard
-              key={listing.id}
-              listing={listing}
-              onOpen={onOpen}
-              wide
-            />
-          ))}
-        </div>
-        {!listings.length && (
-          <div className="empty-state">
-            <BriefcaseBusiness size={24} />
-            <strong>No work matches</strong>
-            <p>Try clearing a filter.</p>
+      <section
+        id="mission-board"
+        className="content-section work-list-section"
+      >
+          <SectionHeading
+            title={referencePoint ? "Nearest missions" : "Mission board"}
+            action={`${orderedListings.length} open`}
+          />
+          <div className="work-list">
+            {orderedListings.map((listing) => (
+              <ListingCard
+                key={listing.id}
+                listing={listing}
+                onOpen={onOpen}
+                proximity={formatApproximateDistance(
+                  approximateDistance(listing, referencePoint)
+                )}
+                saved={savedListingIds.has(listing.id)}
+                saving={savingListingIds.has(listing.id)}
+                onToggleSave={onToggleSave}
+                wide
+              />
+            ))}
           </div>
-        )}
+          {!orderedListings.length && (
+            <div className="empty-state">
+              <BriefcaseBusiness size={24} />
+              <strong>No open missions match</strong>
+              <p>Try clearing a filter or post the first opportunity.</p>
+            </div>
+          )}
       </section>
     </main>
   );
@@ -556,27 +1162,48 @@ function WalletScreen({
   walletConnected,
   deals,
   network,
+  paymentsReady,
+  paymentBlockers,
   walletVerified,
   currentUserId,
   onConnect,
   onDisconnect,
   onDealAction,
+  onFulfillment,
 }: {
   walletAddress: string;
   walletConnected: boolean;
   deals: Deal[];
   network: "mainnet" | "testnet";
+  paymentsReady: boolean;
+  paymentBlockers: PaymentBlocker[];
   walletVerified: boolean;
   currentUserId?: number;
   onConnect: () => void;
   onDisconnect: () => void;
   onDealAction: (
     deal: Deal,
-    action: "cancel" | "mark_delivered" | "confirm_received" | "dispute"
+    action:
+      | "mark_delivered"
+      | "confirm_received"
+      | "dispute"
+      | "refund_expired"
+      | "release_after_review"
   ) => void;
+  onFulfillment: (deal: Deal) => void;
 }) {
+  const [nowUnix, setNowUnix] = useState(0);
+  useEffect(() => {
+    const updateNow = () => setNowUnix(Math.floor(Date.now() / 1000));
+    updateNow();
+    const timer = window.setInterval(updateNow, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const submitted = deals.filter(
     (deal) => deal.status === "payment_submitted"
+  ).length;
+  const completed = deals.filter(
+    (deal) => deal.status === "fulfilled"
   ).length;
 
   return (
@@ -590,8 +1217,18 @@ function WalletScreen({
         </div>
         <h1>{walletConnected ? "Wallet ready." : "Your wallet stays yours."}</h1>
         <p>
-          EzWallet never stores a seed phrase, private key or spendable balance.
+          Easy Wallet never stores a seed phrase, private key or spendable balance.
         </p>
+        <div
+          className="form-notice"
+          role="status"
+          aria-label="Escrow payment readiness"
+        >
+          <ShieldCheck size={17} />
+          {paymentsReady
+            ? `${network} escrow is configured. Each deal is still verified independently on TON.`
+            : paymentReadinessMessage(paymentBlockers, network)}
+        </div>
         {walletConnected ? (
           <div className="connected-wallet">
             <ShieldCheck
@@ -606,13 +1243,16 @@ function WalletScreen({
               </small>
               <strong>{compactAddress(walletAddress)}</strong>
             </div>
-            <button type="button" onClick={onDisconnect}>
-              Disconnect
+            <button
+              type="button"
+              onClick={walletVerified ? onDisconnect : onConnect}
+            >
+              {walletVerified ? "Sign out" : "Verify"}
             </button>
           </div>
         ) : (
           <button className="primary-action wallet-connect" onClick={onConnect}>
-            Connect TON Wallet <ArrowRight size={18} />
+            Connect wallet <ArrowRight size={18} />
           </button>
         )}
       </section>
@@ -627,8 +1267,8 @@ function WalletScreen({
           <b>{submitted}</b>
         </div>
         <div>
-          <span>Platform fee</span>
-          <b>1%</b>
+          <span>Completed</span>
+          <b>{completed}</b>
         </div>
       </section>
 
@@ -648,24 +1288,44 @@ function WalletScreen({
                 <div>
                   <strong>{deal.title}</strong>
                   <small>
-                    {statusLabel(deal.status)} · {deal.counterpartyName}
+                    {escrowStatusLabel(deal)} · {deal.counterpartyName}
                   </small>
                 </div>
                 <b>{nanoToTon(deal.grossNano)} TON</b>
               </div>
+              {deal.fulfillmentMode && (
+                <button
+                  type="button"
+                  className="deal-fulfillment-link"
+                  onClick={() => onFulfillment(deal)}
+                >
+                  <PackageCheck size={15} />
+                  <span>
+                    {deal.fulfillmentMode === "shipping"
+                      ? deal.trackingCode
+                        ? `${deal.carrier ?? "Shipment"} · ${deal.trackingCode}`
+                        : deal.sellerId === currentUserId &&
+                            deal.escrowStatus === "funded"
+                          ? "Add shipment tracking"
+                          : "Delivery details"
+                      : `${deal.fulfillmentMode} details`}
+                  </span>
+                  <ChevronRight size={15} />
+                </button>
+              )}
               {deal.status === "pending_wallet" &&
                 deal.buyerId === currentUserId && (
-                  <button
-                    type="button"
-                    className="deal-action"
-                    onClick={() => onDealAction(deal, "cancel")}
-                  >
-                    Cancel unpaid deal
-                  </button>
+                  <p className="deal-pending-note">
+                    Checking TON. An unfunded request closes automatically after
+                    its wallet window and an on-chain check.
+                  </p>
                 )}
               {deal.status === "awaiting_delivery" && (
                 <div className="deal-actions">
-                  {deal.sellerId === currentUserId && (
+                  {deal.escrowStatus === "funded" &&
+                    deal.sellerId === currentUserId &&
+                    (deal.fulfillmentMode !== "shipping" ||
+                      Boolean(deal.trackingCode)) && (
                     <button
                       type="button"
                       onClick={() => onDealAction(deal, "mark_delivered")}
@@ -673,7 +1333,8 @@ function WalletScreen({
                       Mark delivered
                     </button>
                   )}
-                  {deal.buyerId === currentUserId && (
+                  {deal.escrowStatus === "delivered" &&
+                    deal.buyerId === currentUserId && (
                     <button
                       type="button"
                       className="is-primary"
@@ -682,12 +1343,38 @@ function WalletScreen({
                       Confirm received
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onDealAction(deal, "dispute")}
-                  >
-                    Report a problem
-                  </button>
+                  {(deal.escrowStatus === "funded" ||
+                    deal.escrowStatus === "delivered") && (
+                    <button
+                      type="button"
+                      onClick={() => onDealAction(deal, "dispute")}
+                    >
+                      Open dispute
+                    </button>
+                  )}
+                  {deal.escrowStatus === "funded" &&
+                    deal.buyerId === currentUserId &&
+                    deal.deliveryDeadlineUnix !== null &&
+                    nowUnix > deal.deliveryDeadlineUnix && (
+                      <button
+                        type="button"
+                        onClick={() => onDealAction(deal, "refund_expired")}
+                      >
+                        Refund expired deal
+                      </button>
+                    )}
+                  {deal.escrowStatus === "delivered" &&
+                    deal.reviewDeadlineUnix !== null &&
+                    nowUnix > deal.reviewDeadlineUnix && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onDealAction(deal, "release_after_review")
+                        }
+                      >
+                        Release after review window
+                      </button>
+                    )}
                 </div>
               )}
             </article>
@@ -705,7 +1392,7 @@ function WalletScreen({
       <section className="ledger-note">
         <Info size={17} />
         <p>
-          The EzWallet ledger records deal intent and wallet submissions. TON
+          The Easy Wallet ledger records deal intent and wallet submissions. TON
           remains the source of truth for final settlement.
         </p>
       </section>
@@ -717,23 +1404,44 @@ function ProfileScreen({
   user,
   listingCount,
   connected,
-  onCreate,
+  balanceNano,
+  balanceState,
+  onManageListings,
   onEdit,
+  onVerification,
   onSafety,
 }: {
   user: User | null;
   listingCount: number;
   connected: boolean;
-  onCreate: () => void;
+  balanceNano: string | null;
+  balanceState: "idle" | "loading" | "ready" | "error";
+  onManageListings: () => void;
   onEdit: () => void;
+  onVerification: () => void;
   onSafety: () => void;
 }) {
-  const name = user?.displayName ?? "Telegram guest";
+  const name = user?.displayName ?? "Wallet guest";
+  const hasReviews = Boolean(user && user.reviewCount > 0);
+  const completedDeals = user?.dealsCompleted ?? 0;
+  const storeLevel =
+    !user?.walletVerifiedAt
+      ? "Explorer"
+      : completedDeals >= 25 && user.ratingMilli >= 4_700
+        ? "Trusted merchant"
+        : completedDeals >= 5
+          ? "Proven seller"
+          : "Verified newcomer";
+  const nextMilestone =
+    completedDeals >= 25 ? null : completedDeals >= 5 ? 25 : 5;
+  const milestoneProgress = nextMilestone
+    ? Math.min(100, Math.round((completedDeals / nextMilestone) * 100))
+    : 100;
   return (
     <main className="screen profile-screen">
       <section className="profile-hero">
         <div className="profile-topline">
-          <span className="eyebrow">Profile & reputation</span>
+          <span className="eyebrow">Your storefront</span>
           <button type="button" aria-label="Profile settings" onClick={onEdit}>
             <Settings2 size={19} />
           </button>
@@ -743,31 +1451,70 @@ function ProfileScreen({
           <div>
             <h1>{name}</h1>
             <p>
-              {user ? (
+              {user?.walletVerifiedAt ? (
                 <>
-                  <BadgeCheck size={15} /> Telegram verified
+                  <BadgeCheck size={15} /> Wallet verified
                 </>
               ) : (
-                <>Open inside Telegram to verify your profile</>
+                <>Connect a wallet to create your profile</>
               )}
             </p>
           </div>
         </div>
         <div className="profile-location">
-          <MapPin size={15} /> {user?.city ?? "Riga"}{" "}
+          <MapPin size={15} /> {user?.city || "Location not set"}{" "}
           <i />
-          {connected ? "TON wallet linked" : "Wallet not linked"}
+          {connected ? "Settlement wallet linked" : "Wallet not linked"}
         </div>
       </section>
 
+      {user && (
+        <section
+          className="owner-balance-card"
+          aria-label="Private wallet snapshot"
+        >
+          <div>
+            <span>
+              <LockKeyhole size={13} /> Private to you
+            </span>
+            <strong>
+              {balanceState === "loading"
+                ? "Checking wallet…"
+                : balanceState === "ready" && balanceNano !== null
+                  ? `${nanoToTon(balanceNano, 4)} TON`
+                  : balanceState === "error"
+                    ? "Balance unavailable"
+                    : "Connect a settlement wallet"}
+            </strong>
+            <small>
+              On-chain wallet balance · never shown on your public store
+            </small>
+          </div>
+          <WalletCards size={25} />
+        </section>
+      )}
+
       <section className="reputation-card">
         <div className="reputation-score">
-          <span>Trust score</span>
-          <strong>{user ? formatRating(user.ratingMilli) : "—"}</strong>
+          <span>Store level</span>
+          <strong className="store-level">{storeLevel}</strong>
           <p>
-            <Star size={14} fill="currentColor" /> Based on{" "}
-            {user?.reviewCount ?? 0} reviews
+            <Trophy size={14} /> Earned from real deals, reviews and verification
           </p>
+          <div
+            className="store-progress"
+            aria-label={`${milestoneProgress}% to the next store level`}
+          >
+            <i style={{ width: `${milestoneProgress}%` }} />
+          </div>
+          <small>
+            {nextMilestone
+              ? `${Math.max(
+                  0,
+                  nextMilestone - completedDeals
+                )} completed deals to the next level`
+              : "Highest activity milestone reached"}
+          </small>
         </div>
         <div className="reputation-stats">
           <div>
@@ -779,41 +1526,56 @@ function ProfileScreen({
             <span>listings</span>
           </div>
           <div>
-            <b>100%</b>
-            <span>response</span>
+            <b>{hasReviews && user ? formatRating(user.ratingMilli) : "—"}</b>
+            <span>{user?.reviewCount ?? 0} reviews</span>
           </div>
         </div>
       </section>
 
       <section className="badge-section">
-        <SectionHeading title="Earned trust" />
+        <SectionHeading title="Trust signals" />
         <div className="badge-grid">
           <div>
             <span>
               <BadgeCheck size={19} />
             </span>
-            <strong>Telegram ID</strong>
-            <small>Identity signal</small>
+            <strong>Wallet identity</strong>
+            <small>
+              {user?.walletVerifiedAt
+                ? "Cryptographic proof verified"
+                : "Connect to verify"}
+            </small>
           </div>
           <div>
             <span>
               <PackageCheck size={19} />
             </span>
-            <strong>Reliable trader</strong>
-            <small>Completed deals</small>
+            <strong>Completed deals</strong>
+            <small>
+              {user?.dealsCompleted
+                ? `${user.dealsCompleted} recorded`
+                : "None recorded yet"}
+            </small>
           </div>
           <div>
             <span>
-              <MessageCircle size={19} />
+            <Target size={19} />
             </span>
-            <strong>Fast replies</strong>
-            <small>Under 1 hour</small>
+            <strong>Identity level</strong>
+            <small>{user?.verificationLabel ?? "Not verified"}</small>
           </div>
         </div>
       </section>
 
       <section className="profile-menu">
-        <button type="button" onClick={onCreate}>
+        <button type="button" onClick={onVerification}>
+          <span>
+            <BadgeCheck size={18} /> Identity verification
+          </span>
+          <strong>{user?.verificationLabel ?? "Not verified"}</strong>
+          <ChevronRight size={17} />
+        </button>
+        <button type="button" onClick={onManageListings}>
           <span>
             <Store size={18} /> My listings
           </span>
@@ -837,6 +1599,333 @@ function ProfileScreen({
   );
 }
 
+function VerificationSheet({ user }: { user: User | null }) {
+  return (
+    <div className="verification-sheet">
+      <section className="verification-current">
+        <span>Current public level</span>
+        <strong>{user?.verificationLabel ?? "Not verified"}</strong>
+        <p>
+          {user?.walletVerifiedAt
+            ? "Your wallet-control proof is active. It does not prove your legal identity."
+            : "Connect a wallet to create your account and establish wallet control."}
+        </p>
+      </section>
+      <section className="verification-path" aria-label="Verification levels">
+        <div className={user?.walletVerifiedAt ? "is-complete" : ""}>
+          <span>1</span>
+          <strong>Wallet proof</strong>
+          <small>Cryptographic control of your settlement wallet</small>
+        </div>
+        <div
+          className={
+            user?.verificationLevel === "identity" ||
+            user?.verificationLevel === "enhanced" ||
+            user?.verificationLevel === "business"
+              ? "is-complete"
+              : ""
+          }
+        >
+          <span>2</span>
+          <strong>Identity check</strong>
+          <small>Regulated provider attestation with expiry</small>
+        </div>
+        <div
+          className={
+            user?.verificationLevel === "enhanced" ||
+            user?.verificationLevel === "business"
+              ? "is-complete"
+              : ""
+          }
+        >
+          <span>3</span>
+          <strong>Enhanced or business</strong>
+          <small>Address or business evidence, when required</small>
+        </div>
+      </section>
+      <div className="verification-provider-note">
+        <ShieldCheck size={19} />
+        <div>
+          <strong>Identity onboarding is not live yet</strong>
+          <p>
+            A regulated verification provider and legal operating model must be
+            approved first. Easy Wallet will not collect documents directly or
+            award a fake badge.
+          </p>
+        </div>
+      </div>
+      <a className="verification-policy-link" href="/privacy">
+        Read the privacy policy <ChevronRight size={15} />
+      </a>
+    </div>
+  );
+}
+
+function StorefrontSheet({
+  storefront,
+  state,
+  onRetry,
+  onOpenListing,
+}: {
+  storefront: PublicStorefront | null;
+  state: "loading" | "ready" | "error";
+  onRetry: () => void;
+  onOpenListing: (listing: Listing) => void;
+}) {
+  if (state === "loading") {
+    return (
+      <div className="storefront-status" role="status">
+        <RefreshCw size={20} />
+        <strong>Loading storefront…</strong>
+      </div>
+    );
+  }
+  if (state === "error" || !storefront) {
+    return (
+      <div className="storefront-status is-error">
+        <WifiOff size={20} />
+        <strong>Storefront unavailable</strong>
+        <p>No cached or invented profile data is shown.</p>
+        <button type="button" onClick={onRetry}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  const { profile, listings: storeListings } = storefront;
+  return (
+    <div className="public-storefront">
+      <section className="public-storefront-hero">
+        <Avatar
+          name={profile.displayName}
+          src={profile.photoUrl}
+          size="large"
+        />
+        <div>
+          <span>Public storefront</span>
+          <h2>{profile.displayName}</h2>
+          <p>
+            <BadgeCheck size={14} /> {profile.verificationLabel}
+          </p>
+        </div>
+      </section>
+      {profile.bio && <p className="public-storefront-bio">{profile.bio}</p>}
+      <section className="public-storefront-stats" aria-label="Store activity">
+        <div>
+          <b>{profile.dealsCompleted}</b>
+          <span>completed</span>
+        </div>
+        <div>
+          <b>
+            {reputationLabel(profile.ratingMilli, profile.reviewCount)}
+          </b>
+          <span>{profile.reviewCount} reviews</span>
+        </div>
+        <div>
+          <b>{storeListings.length}</b>
+          <span>active listings</span>
+        </div>
+      </section>
+      <div className="storefront-trust-note">
+        <ShieldCheck size={16} />
+        <span>
+          Balance and wallet address stay private. Only verified status and
+          real marketplace activity are public.
+        </span>
+      </div>
+      <section className="storefront-listings">
+        <SectionHeading
+          title="Available now"
+          action={`${storeListings.length} live`}
+        />
+        <div className="listing-grid">
+          {storeListings.map((listing) => (
+            <ListingCard
+              key={listing.id}
+              listing={listing}
+              onOpen={onOpenListing}
+            />
+          ))}
+        </div>
+        {!storeListings.length && (
+          <div className="empty-state">
+            <Store size={23} />
+            <strong>No active listings</strong>
+            <p>This store has nothing published right now.</p>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ListingManagerSheet({
+  open,
+  listings,
+  state,
+  pendingIds,
+  onClose,
+  onRetry,
+  onCreate,
+  onEdit,
+  onAction,
+}: {
+  open: boolean;
+  listings: OwnerListing[];
+  state: "loading" | "ready" | "error";
+  pendingIds: ReadonlySet<string>;
+  onClose: () => void;
+  onRetry: () => void;
+  onCreate: () => void;
+  onEdit: (listing: OwnerListing) => void;
+  onAction: (
+    listing: OwnerListing,
+    action: "pause" | "activate" | "close"
+  ) => Promise<void>;
+}) {
+  const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
+
+  return (
+    <BottomSheet
+      open={open}
+      onClose={() => {
+        setConfirmCloseId(null);
+        onClose();
+      }}
+      title="My listings"
+    >
+      <div className="listing-manager">
+        <div className="listing-manager-intro">
+          <div>
+            <span className="eyebrow">Owner controls</span>
+            <p>
+              Pause removes a post from discovery. Closing is permanent and does
+              not alter an existing deal.
+            </p>
+          </div>
+          <button type="button" onClick={onCreate}>
+            <Plus size={15} /> New
+          </button>
+        </div>
+
+        {state === "loading" && (
+          <div className="empty-state compact" role="status">
+            <RefreshCw size={24} />
+            <strong>Loading your real listings</strong>
+            <p>No placeholder posts are shown.</p>
+          </div>
+        )}
+
+        {state === "error" && (
+          <div className="empty-state compact" role="alert">
+            <WifiOff size={24} />
+            <strong>Your listings are unavailable</strong>
+            <p>Nothing was changed. Check your connection and retry.</p>
+            <button type="button" onClick={onRetry}>
+              <RefreshCw size={14} /> Retry
+            </button>
+          </div>
+        )}
+
+        {state === "ready" && listings.length === 0 && (
+          <div className="empty-state compact">
+            <Store size={24} />
+            <strong>No listings yet</strong>
+            <p>Create a real post when you are ready.</p>
+            <button type="button" onClick={onCreate}>
+              <Plus size={14} /> Create listing
+            </button>
+          </div>
+        )}
+
+        {state === "ready" && listings.length > 0 && (
+          <div className="owned-listing-list">
+            {listings.map((listing) => {
+              const pending = pendingIds.has(listing.id);
+              const confirmClose = confirmCloseId === listing.id;
+              return (
+                <article className="owned-listing" key={listing.id}>
+                  <div
+                    className={
+                      listing.imageUrl
+                        ? "owned-listing-media"
+                        : "owned-listing-media is-empty"
+                    }
+                  >
+                    {listing.imageUrl ? (
+                      <img src={listing.imageUrl} alt="" draggable={false} />
+                    ) : (
+                      <Store size={22} />
+                    )}
+                  </div>
+                  <div className="owned-listing-copy">
+                    <span>
+                      {listing.section} · {listing.type}
+                    </span>
+                    <strong>{listing.title}</strong>
+                    <small>{nanoToTon(listing.priceNano)} TON</small>
+                  </div>
+                  <span
+                    className={`listing-status listing-status-${listing.status}`}
+                  >
+                    {listingStatusLabel(listing.status)}
+                  </span>
+                  {(listing.status === "active" ||
+                    listing.status === "paused") && (
+                    <div className="owned-listing-actions">
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => onEdit(listing)}
+                      >
+                        <PencilLine size={13} /> Edit
+                      </button>
+                      {listing.status === "active" ? (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => void onAction(listing, "pause")}
+                        >
+                          <Pause size={13} /> Pause
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => void onAction(listing, "activate")}
+                        >
+                          <Play size={13} /> Reactivate
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={confirmClose ? "is-confirming" : ""}
+                        disabled={pending}
+                        onClick={() => {
+                          if (!confirmClose) {
+                            setConfirmCloseId(listing.id);
+                            return;
+                          }
+                          setConfirmCloseId(null);
+                          void onAction(listing, "close");
+                        }}
+                      >
+                        <X size={13} />
+                        {confirmClose ? "Close permanently?" : "Close"}
+                      </button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </BottomSheet>
+  );
+}
+
 function BottomSheet({
   open,
   onClose,
@@ -848,23 +1937,60 @@ function BottomSheet({
   children: React.ReactNode;
   title?: string;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    dialogRef.current?.focus();
+    return () => previouslyFocused?.focus();
+  }, [open]);
+
   if (!open) return null;
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         className="bottom-sheet"
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="sheet-handle" />
@@ -885,24 +2011,36 @@ function BottomSheet({
 function ListingSheet({
   listing,
   currentUser,
+  network,
   hasApplied,
   onClose,
   onPay,
   onApply,
   onReport,
+  onViewStore,
+  onToggleSave,
+  saved,
+  saving,
   busy,
 }: {
   listing: Listing;
   currentUser: User | null;
+  network: "mainnet" | "testnet";
   hasApplied: boolean;
   onClose: () => void;
   onPay: (listing: Listing) => void;
   onApply: (listing: Listing) => void;
   onReport: (listing: Listing) => void;
+  onViewStore: (listing: Listing) => void;
+  onToggleSave: (listing: Listing) => void;
+  saved: boolean;
+  saving: boolean;
   busy: boolean;
 }) {
   const isOwner = currentUser?.id === listing.ownerId;
   const isJob = listing.type === "job";
+  const sellerWalletReady =
+    listing.ownerWalletVerified && listing.ownerWalletNetwork === network;
   return (
     <div className="listing-detail">
       <div
@@ -920,8 +2058,15 @@ function ListingSheet({
         <button type="button" onClick={onClose} aria-label="Close listing">
           <ArrowLeft size={19} />
         </button>
-        <button type="button" aria-label="Save listing">
-          <Heart size={18} />
+        <button
+          type="button"
+          className={saved ? "is-saved" : ""}
+          aria-label={saved ? "Remove listing from saved" : "Save listing"}
+          aria-pressed={saved}
+          disabled={saving}
+          onClick={() => onToggleSave(listing)}
+        >
+          <Heart size={18} fill={saved ? "currentColor" : "none"} />
         </button>
       </div>
       <div className="detail-body">
@@ -941,17 +2086,46 @@ function ListingSheet({
             size="medium"
           />
           <div>
-            <strong>
-              {listing.ownerName} <BadgeCheck size={14} />
-            </strong>
+            <strong>{listing.ownerName}</strong>
+            <div className="seller-verification">
+              <span>
+                <BadgeCheck size={12} /> Marketplace profile
+              </span>
+              {sellerWalletReady ? (
+                <span>
+                  <ShieldCheck size={12} /> TON {network} wallet
+                </span>
+              ) : listing.ownerWalletVerified &&
+                listing.ownerWalletNetwork ? (
+                <span className="is-pending">
+                  <ShieldCheck size={12} /> TON {listing.ownerWalletNetwork}{" "}
+                  wallet · {network} required
+                </span>
+              ) : (
+                <span className="is-pending">
+                  <WalletCards size={12} /> Wallet not ready
+                </span>
+              )}
+            </div>
             <span>
-              <Star size={12} fill="currentColor" />{" "}
-              {formatRating(listing.ownerRatingMilli)} ·{" "}
+              <Star
+                size={12}
+                fill={listing.ownerReviewCount > 0 ? "currentColor" : "none"}
+              />{" "}
+              {reputationLabel(
+                listing.ownerRatingMilli,
+                listing.ownerReviewCount
+              )}{" "}
+              ·{" "}
               {listing.ownerDealsCompleted} completed
             </span>
           </div>
-          <button type="button">
-            <MessageCircle size={17} />
+          <button
+            type="button"
+            aria-label={`View ${listing.ownerName}'s storefront`}
+            onClick={() => onViewStore(listing)}
+          >
+            <Store size={17} />
           </button>
         </div>
 
@@ -973,14 +2147,6 @@ function ListingSheet({
           </div>
         </div>
 
-        <div className="fee-disclosure">
-          <ShieldCheck size={17} />
-          <p>
-            One wallet approval sends 99% to the seller and the transparent 1%
-            platform fee. The two TON recipient messages settle independently.
-          </p>
-        </div>
-
         {!isOwner && (
           <button
             type="button"
@@ -994,7 +2160,12 @@ function ListingSheet({
         <button
           type="button"
           className="primary-action"
-          disabled={busy || isOwner || (isJob && hasApplied)}
+          disabled={
+            busy ||
+            isOwner ||
+            (isJob && hasApplied) ||
+            (!isJob && !sellerWalletReady)
+          }
           onClick={() => (isJob ? onApply(listing) : onPay(listing))}
         >
           {isOwner
@@ -1003,6 +2174,8 @@ function ListingSheet({
               ? "Application sent"
             : busy
               ? "Preparing…"
+              : !isJob && !sellerWalletReady
+                ? `Seller needs a verified ${network} wallet`
               : isJob
                 ? "Apply for this work"
                 : `Continue · ${nanoToTon(listing.priceNano)} TON`}
@@ -1021,18 +2194,32 @@ type CreateForm = {
   category: string;
   priceTon: string;
   location: string;
+  latitude?: number;
+  longitude?: number;
+  locationRadiusMeters?: number;
+  fulfillmentMode: "shipping" | "pickup" | "digital" | "service";
   delivery: string;
 };
+
+function defaultFulfillmentMode(type: CreateForm["type"]) {
+  if (type === "physical") return "shipping" as const;
+  if (type === "digital") return "digital" as const;
+  return "service" as const;
+}
 
 const initialCreateForm: CreateForm = {
   section: "market",
   type: "physical",
   title: "",
   description: "",
-  category: "Other",
+  category: "",
   priceTon: "",
-  location: "Riga",
-  delivery: "Arrange in chat",
+  location: "",
+  latitude: undefined,
+  longitude: undefined,
+  locationRadiusMeters: undefined,
+  fulfillmentMode: "shipping",
+  delivery: "",
 };
 
 function CreateSheet({
@@ -1042,6 +2229,7 @@ function CreateSheet({
   busy,
   canPublish,
   initialSection,
+  listing,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1049,23 +2237,111 @@ function CreateSheet({
   busy: boolean;
   canPublish: boolean;
   initialSection: "market" | "work";
+  listing?: OwnerListing;
 }) {
   const [form, setForm] = useState<CreateForm>(() => ({
-    ...initialCreateForm,
-    section: initialSection,
-    type: initialSection === "market" ? "physical" : "service",
+    ...(listing
+      ? {
+          section: listing.section,
+          type: listing.type,
+          title: listing.title,
+          description: listing.description,
+          category:
+            listing.section === "market" &&
+            !marketCategoryOptions.includes(
+              listing.category as (typeof marketCategoryOptions)[number]
+            )
+              ? "Other"
+              : listing.category,
+          priceTon: nanoToTon(listing.priceNano, 9),
+          location: listing.location,
+          latitude:
+            listing.latitudeE6 === null
+              ? undefined
+              : listing.latitudeE6 / 1_000_000,
+          longitude:
+            listing.longitudeE6 === null
+              ? undefined
+              : listing.longitudeE6 / 1_000_000,
+          locationRadiusMeters: listing.locationRadiusMeters ?? undefined,
+          fulfillmentMode: listing.fulfillmentMode,
+          delivery: listing.delivery,
+        }
+      : {
+          ...initialCreateForm,
+          section: initialSection,
+          type: initialSection === "market" ? "physical" : "service",
+          fulfillmentMode:
+            initialSection === "market" ? "shipping" : "service",
+          category: "",
+        }),
   }));
   const [image, setImage] = useState<File | null>(null);
+  const [locationPending, setLocationPending] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
   const setSection = (section: "market" | "work") => {
     setForm((current) => ({
       ...current,
       section,
       type: section === "market" ? "physical" : "service",
+      fulfillmentMode: section === "market" ? "shipping" : "service",
+      category: "",
+      delivery: "",
+      latitude: section === "market" ? undefined : current.latitude,
+      longitude: section === "market" ? undefined : current.longitude,
+      locationRadiusMeters:
+        section === "market" ? undefined : current.locationRadiusMeters,
     }));
+  };
+  const attachApproximateArea = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage("Location is not available in this browser.");
+      return;
+    }
+    setLocationPending(true);
+    setLocationMessage("");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const rounded = normalizePublicCoordinates({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          radiusMeters: form.locationRadiusMeters ?? 1_000,
+        });
+        if (rounded) {
+          setForm((current) => ({
+            ...current,
+            latitude: rounded.latitudeE6 / 1_000_000,
+            longitude: rounded.longitudeE6 / 1_000_000,
+            locationRadiusMeters: rounded.radiusMeters,
+          }));
+          setLocationMessage(
+            "Approximate area attached. Your exact position was discarded."
+          );
+        }
+        setLocationPending(false);
+      },
+      (error) => {
+        setLocationPending(false);
+        setLocationMessage(
+          error.code === error.PERMISSION_DENIED
+            ? "Location permission was not granted. You can publish without a map area."
+            : "Your area could not be found. Try again or publish without it."
+        );
+      },
+      {
+        enableHighAccuracy: false,
+        maximumAge: 300_000,
+        timeout: 8_000,
+      }
+    );
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Create a listing">
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      title={listing ? "Edit listing" : "Create a listing"}
+    >
       <form
         className="create-form"
         onSubmit={(event) => {
@@ -1073,47 +2349,85 @@ function CreateSheet({
           void onSubmit(form, image);
         }}
       >
-        <div className="segmented-control">
-          <button
-            type="button"
-            className={form.section === "market" ? "is-active" : ""}
-            onClick={() => setSection("market")}
-          >
-            <ShoppingBag size={16} /> Market
-          </button>
-          <button
-            type="button"
-            className={form.section === "work" ? "is-active" : ""}
-            onClick={() => setSection("work")}
-          >
-            <BriefcaseBusiness size={16} /> Work
-          </button>
-        </div>
+        {listing ? (
+          <div className="edit-listing-lock">
+            <span className="eyebrow">
+              {form.section} · {form.type}
+            </span>
+            <strong>Section and listing type stay fixed</strong>
+            <p>
+              Existing deals keep their original terms. Editing is blocked
+              while a deal or application is active.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="segmented-control">
+              <button
+                type="button"
+                className={form.section === "market" ? "is-active" : ""}
+                onClick={() => setSection("market")}
+              >
+                <ShoppingBag size={16} /> Market
+              </button>
+              <button
+                type="button"
+                className={form.section === "work" ? "is-active" : ""}
+                onClick={() => setSection("work")}
+              >
+                <BriefcaseBusiness size={16} /> Work
+              </button>
+            </div>
 
-        <label>
-          <span>Listing type</span>
-          <select
-            value={form.type}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                type: event.target.value as CreateForm["type"],
-              }))
-            }
-          >
-            {form.section === "market" ? (
-              <>
-                <option value="physical">Physical item</option>
-                <option value="digital">Digital product</option>
-              </>
-            ) : (
-              <>
-                <option value="service">Offer a service</option>
-                <option value="job">Post a job</option>
-              </>
-            )}
-          </select>
-        </label>
+            <label>
+              <span>Listing type</span>
+              <select
+                value={form.type}
+                onChange={(event) =>
+                  setForm((current) => {
+                    const type = event.target.value as CreateForm["type"];
+                    return {
+                      ...current,
+                      type,
+                      fulfillmentMode: defaultFulfillmentMode(type),
+                    };
+                  })
+                }
+              >
+                {form.section === "market" ? (
+                  <>
+                    <option value="physical">Physical item</option>
+                    <option value="digital">Digital product</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="service">Offer a service</option>
+                    <option value="job">Post a job</option>
+                  </>
+                )}
+              </select>
+            </label>
+          </>
+        )}
+
+        {form.type === "physical" && (
+          <label>
+            <span>Handoff</span>
+            <select
+              value={form.fulfillmentMode}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  fulfillmentMode: event.target
+                    .value as CreateForm["fulfillmentMode"],
+                }))
+              }
+            >
+              <option value="shipping">Ship to buyer</option>
+              <option value="pickup">Local pickup</option>
+            </select>
+          </label>
+        )}
 
         <label>
           <span>Title</span>
@@ -1155,7 +2469,11 @@ function CreateSheet({
             onChange={(event) => setImage(event.target.files?.[0] ?? null)}
           />
           <small>
-            {image ? image.name : "JPG, PNG, or WebP · up to 5 MB"}
+            {image
+              ? image.name
+              : listing?.imageUrl
+                ? "Current image stays unless you choose a replacement."
+                : "JPG, PNG, or WebP · up to 5 MB"}
           </small>
         </label>
 
@@ -1180,16 +2498,40 @@ function CreateSheet({
           </label>
           <label>
             <span>Category</span>
-            <input
-              required
-              value={form.category}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  category: event.target.value,
-                }))
-              }
-            />
+            {form.section === "market" ? (
+              <select
+                required
+                value={form.category}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    category: event.target.value,
+                  }))
+                }
+              >
+                <option value="" disabled>
+                  Choose a category
+                </option>
+                {marketCategoryOptions.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                required
+                maxLength={64}
+                value={form.category}
+                placeholder="Trade, care, design, repair…"
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    category: event.target.value,
+                  }))
+                }
+              />
+            )}
           </label>
         </div>
 
@@ -1198,6 +2540,7 @@ function CreateSheet({
           <input
             required
             value={form.location}
+            placeholder="City or approximate area"
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -1206,11 +2549,75 @@ function CreateSheet({
             }
           />
         </label>
+        {form.section === "work" && (
+          <div className="listing-location-share">
+            <div>
+              <span>
+                <MapPin size={16} />
+                Approximate map area
+              </span>
+              <p>
+                Optional. The map shows an uncertainty circle, never a precise
+                address.
+              </p>
+            </div>
+            {form.latitude === undefined ? (
+              <button
+                type="button"
+                onClick={attachApproximateArea}
+                disabled={locationPending}
+              >
+                <Crosshair size={15} />
+                {locationPending ? "Finding area…" : "Add my area"}
+              </button>
+            ) : (
+              <div className="location-share-active">
+                <label>
+                  <span>Area size</span>
+                  <select
+                    value={form.locationRadiusMeters ?? 1_000}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        locationRadiusMeters: Number(event.target.value),
+                      }))
+                    }
+                  >
+                    <option value={500}>500 m</option>
+                    <option value={1000}>1 km</option>
+                    <option value={3000}>3 km</option>
+                    <option value={10000}>10 km</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm((current) => ({
+                      ...current,
+                      latitude: undefined,
+                      longitude: undefined,
+                      locationRadiusMeters: undefined,
+                    }));
+                    setLocationMessage("Approximate area removed.");
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+            {locationMessage && (
+              <p className="location-share-message" role="status">
+                {locationMessage}
+              </p>
+            )}
+          </div>
+        )}
         <label>
           <span>Delivery or timing</span>
           <input
             required
             value={form.delivery}
+            placeholder="Pickup, shipping, download, or timing"
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -1223,7 +2630,8 @@ function CreateSheet({
         {!canPublish && (
           <div className="form-notice">
             <Info size={17} />
-            Open EzWallet from Telegram to publish under a verified profile.
+            Connect and verify your wallet to{" "}
+            {listing ? "edit this listing" : "publish under a verified profile"}.
           </div>
         )}
 
@@ -1232,7 +2640,14 @@ function CreateSheet({
           className="primary-action"
           disabled={busy || !canPublish}
         >
-          {busy ? "Publishing…" : "Publish listing"} <ArrowRight size={18} />
+          {busy
+            ? listing
+              ? "Saving…"
+              : "Publishing…"
+            : listing
+              ? "Save changes"
+              : "Publish listing"}{" "}
+          <ArrowRight size={18} />
         </button>
       </form>
     </BottomSheet>
@@ -1315,8 +2730,15 @@ function PaymentSuccessSheet({
   deal: {
     title: string;
     grossNano: string;
+    buyerFeeNano: string;
+    sellerFeeNano: string;
+    buyerTotalNano: string;
     platformFeeNano: string;
     sellerAmountNano: string;
+    escrowAddress: string;
+    escrowFundingAmountNano: string;
+    deliveryDeadlineUnix: number;
+    reviewWindowSeconds: number;
   } | null;
   onClose: () => void;
 }) {
@@ -1329,27 +2751,298 @@ function PaymentSuccessSheet({
         <span className="eyebrow">Wallet submission recorded</span>
         <h2>{deal?.title}</h2>
         <p>
-          Your wallet broadcast the transaction. EzWallet will keep the deal in
-          confirming status until recipient transfers are observed on TON.
+          Your wallet broadcast the escrow deployment. Easy Wallet will keep the
+          deal in confirming status until the exact contract, funding amount, and
+          code hash are independently verified on TON.
         </p>
         <div className="payment-breakdown">
           <div>
-            <span>Seller</span>
-            <b>{deal && nanoToTon(deal.sellerAmountNano, 4)} TON</b>
+            <span>Locked for the deal</span>
+            <b>{deal && nanoToTon(deal.buyerTotalNano, 4)} TON</b>
           </div>
           <div>
-            <span>Platform fee · 1%</span>
-            <b>{deal && nanoToTon(deal.platformFeeNano, 4)} TON</b>
+            <span>Your fee · 1%</span>
+            <b>{deal && nanoToTon(deal.buyerFeeNano, 4)} TON</b>
           </div>
           <div>
-            <span>Total approved</span>
-            <b>{deal && nanoToTon(deal.grossNano, 4)} TON</b>
+            <span>Seller fee · 1%</span>
+            <b>{deal && nanoToTon(deal.sellerFeeNano, 4)} TON</b>
+          </div>
+          <div>
+            <span>Refundable network reserve</span>
+            <b>
+              {deal &&
+                nanoToTon(
+                  (
+                    BigInt(deal.escrowFundingAmountNano) -
+                    BigInt(deal.buyerTotalNano)
+                  ).toString(),
+                  4
+                )}{" "}
+              TON
+            </b>
+          </div>
+          <div>
+            <span>Wallet request</span>
+            <b>
+              {deal && nanoToTon(deal.escrowFundingAmountNano, 4)} TON
+            </b>
           </div>
         </div>
         <button type="button" className="primary-action" onClick={onClose}>
           View wallet activity <ArrowRight size={18} />
         </button>
       </div>
+    </BottomSheet>
+  );
+}
+
+type DeliveryAddressForm = {
+  recipientName: string;
+  line1: string;
+  line2: string;
+  city: string;
+  region: string;
+  postalCode: string;
+  countryCode: string;
+  instructions: string;
+};
+
+const initialDeliveryAddress: DeliveryAddressForm = {
+  recipientName: "",
+  line1: "",
+  line2: "",
+  city: "",
+  region: "",
+  postalCode: "",
+  countryCode: "",
+  instructions: "",
+};
+
+function PaymentQuoteSheet({
+  open,
+  listing,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  listing: Listing | null;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (
+    listing: Listing,
+    deliveryAddress?: DeliveryAddressForm
+  ) => Promise<void>;
+}) {
+  const [deliveryAddress, setDeliveryAddress] =
+    useState<DeliveryAddressForm>(initialDeliveryAddress);
+  if (!listing) return null;
+  const quote = calculateTransactionFees(BigInt(listing.priceNano));
+  const walletRequestNano =
+    quote.buyerTotalNano + escrowFundingReserveNano;
+  const requiresShipping = listing.fulfillmentMode === "shipping";
+
+  return (
+    <BottomSheet open={open} onClose={onClose} title="Review payment">
+      <form
+        className="payment-success checkout-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onConfirm(
+            listing,
+            requiresShipping ? deliveryAddress : undefined
+          );
+        }}
+      >
+        <span className="eyebrow">Transparent checkout</span>
+        <h2>{listing.title}</h2>
+        <p>
+          Both parties contribute 1% only when this transaction is approved.
+          Funds enter a per-deal TON escrow contract; Easy Wallet never stores a
+          spendable key.
+        </p>
+        {requiresShipping && (
+          <fieldset className="delivery-address-fields">
+            <legend>Delivery address</legend>
+            <p>
+              Encrypted before storage and shown only to you and the seller
+              after escrow funding is confirmed.
+            </p>
+            <label>
+              <span>Recipient</span>
+              <input
+                required
+                autoComplete="name"
+                minLength={2}
+                maxLength={120}
+                value={deliveryAddress.recipientName}
+                onChange={(event) =>
+                  setDeliveryAddress((current) => ({
+                    ...current,
+                    recipientName: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>Address</span>
+              <input
+                required
+                autoComplete="address-line1"
+                minLength={3}
+                maxLength={160}
+                value={deliveryAddress.line1}
+                onChange={(event) =>
+                  setDeliveryAddress((current) => ({
+                    ...current,
+                    line1: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>Apartment, unit, etc. (optional)</span>
+              <input
+                autoComplete="address-line2"
+                maxLength={160}
+                value={deliveryAddress.line2}
+                onChange={(event) =>
+                  setDeliveryAddress((current) => ({
+                    ...current,
+                    line2: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <div className="delivery-address-grid">
+              <label>
+                <span>City</span>
+                <input
+                  required
+                  autoComplete="address-level2"
+                  minLength={2}
+                  maxLength={100}
+                  value={deliveryAddress.city}
+                  onChange={(event) =>
+                    setDeliveryAddress((current) => ({
+                      ...current,
+                      city: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Region (optional)</span>
+                <input
+                  autoComplete="address-level1"
+                  maxLength={100}
+                  value={deliveryAddress.region}
+                  onChange={(event) =>
+                    setDeliveryAddress((current) => ({
+                      ...current,
+                      region: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Postal code</span>
+                <input
+                  required
+                  autoComplete="postal-code"
+                  minLength={2}
+                  maxLength={32}
+                  value={deliveryAddress.postalCode}
+                  onChange={(event) =>
+                    setDeliveryAddress((current) => ({
+                      ...current,
+                      postalCode: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Country code</span>
+                <input
+                  required
+                  autoComplete="country"
+                  inputMode="text"
+                  minLength={2}
+                  maxLength={2}
+                  pattern="[A-Za-z]{2}"
+                  placeholder="LV"
+                  value={deliveryAddress.countryCode}
+                  onChange={(event) =>
+                    setDeliveryAddress((current) => ({
+                      ...current,
+                      countryCode: event.target.value
+                        .replace(/[^A-Za-z]/g, "")
+                        .toUpperCase(),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <label>
+              <span>Delivery notes (optional)</span>
+              <textarea
+                maxLength={240}
+                value={deliveryAddress.instructions}
+                onChange={(event) =>
+                  setDeliveryAddress((current) => ({
+                    ...current,
+                    instructions: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </fieldset>
+        )}
+        <div className="payment-breakdown">
+          <div>
+            <span>Item or service price</span>
+            <b>{nanoToTon(quote.baseNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Your fee · 1%</span>
+            <b>{nanoToTon(quote.buyerFeeNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>You approve</span>
+            <b>{nanoToTon(quote.buyerTotalNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Seller fee · 1%</span>
+            <b>{nanoToTon(quote.sellerFeeNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Seller receives</span>
+            <b>{nanoToTon(quote.sellerAmountNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Refundable contract reserve</span>
+            <b>{nanoToTon(escrowFundingReserveNano.toString(), 4)} TON</b>
+          </div>
+          <div>
+            <span>Wallet request</span>
+            <b>{nanoToTon(walletRequestNano.toString(), 4)} TON</b>
+          </div>
+        </div>
+        <button
+          type="submit"
+          className="primary-action"
+          disabled={busy}
+        >
+          {busy
+            ? "Preparing wallet…"
+            : `Fund ${nanoToTon(walletRequestNano.toString(), 4)} TON escrow`}
+          {!busy && <ArrowRight size={18} />}
+        </button>
+        <button type="button" className="text-action" onClick={onClose}>
+          Back to listing
+        </button>
+      </form>
     </BottomSheet>
   );
 }
@@ -1476,6 +3169,233 @@ function ReportSheet({
   );
 }
 
+function FulfillmentSheet({
+  open,
+  deal,
+  detail,
+  state,
+  busy,
+  currentUserId,
+  onClose,
+  onSaveTracking,
+}: {
+  open: boolean;
+  deal: Deal | null;
+  detail: FulfillmentDetail | null;
+  state: "loading" | "ready" | "error";
+  busy: boolean;
+  currentUserId?: number;
+  onClose: () => void;
+  onSaveTracking: (carrier: string, trackingCode: string) => Promise<void>;
+}) {
+  const [carrier, setCarrier] = useState(detail?.carrier ?? "");
+  const [trackingCode, setTrackingCode] = useState(detail?.trackingCode ?? "");
+  const isSeller = Boolean(deal && deal.sellerId === currentUserId);
+  const canAddTracking =
+    isSeller &&
+    deal?.status === "awaiting_delivery" &&
+    deal.escrowStatus === "funded" &&
+    detail?.mode === "shipping";
+  const address = detail?.deliveryAddress;
+
+  return (
+    <BottomSheet
+      open={open && Boolean(deal)}
+      onClose={onClose}
+      title="Fulfillment details"
+    >
+      <div className="fulfillment-sheet">
+        {state === "loading" && (
+          <div className="empty-state compact" role="status">
+            <RefreshCw size={22} />
+            <strong>Loading private deal details…</strong>
+          </div>
+        )}
+        {state === "error" && (
+          <div className="empty-state compact" role="alert">
+            <WifiOff size={22} />
+            <strong>Fulfillment details are unavailable</strong>
+            <p>Close this panel and try again.</p>
+          </div>
+        )}
+        {state === "ready" && detail && (
+          <>
+            <div className="fulfillment-heading">
+              <PackageCheck size={22} />
+              <div>
+                <span>{detail.mode}</span>
+                <strong>{deal?.title}</strong>
+              </div>
+            </div>
+
+            {detail.mode === "shipping" && (
+              <section className="fulfillment-section">
+                <span>Delivery address</span>
+                {address ? (
+                  <address>
+                    <strong>{address.recipientName}</strong>
+                    <span>{address.line1}</span>
+                    {address.line2 && <span>{address.line2}</span>}
+                    <span>
+                      {[address.city, address.region, address.postalCode]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </span>
+                    <span>{address.countryCode}</span>
+                    {address.instructions && (
+                      <small>{address.instructions}</small>
+                    )}
+                  </address>
+                ) : (
+                  <p>
+                    {detail.addressAvailable && !detail.addressVisible
+                      ? "The seller can view this address after escrow funding is confirmed."
+                      : "No delivery address is available."}
+                  </p>
+                )}
+              </section>
+            )}
+
+            {detail.mode === "pickup" && (
+              <div className="form-notice">
+                <MapPin size={17} />
+                Arrange a safe public pickup point with the other party. Exact
+                home coordinates are never published.
+              </div>
+            )}
+
+            {detail.mode === "digital" && (
+              <div className="form-notice">
+                <LockKeyhole size={17} />
+                Deliver access details through your agreed private channel; do
+                not place passwords or recovery phrases in public listing text.
+              </div>
+            )}
+
+            {detail.mode === "service" && (
+              <div className="form-notice">
+                <Target size={17} />
+                Complete the agreed scope and use the escrow actions to record
+                delivery and acceptance.
+              </div>
+            )}
+
+            {detail.mode === "shipping" && (
+              <section className="fulfillment-section">
+                <span>Shipment</span>
+                {detail.trackingCode && detail.carrier ? (
+                  <div className="tracking-record">
+                    <small>{detail.carrier}</small>
+                    <strong>{detail.trackingCode}</strong>
+                    <span>
+                      Added{" "}
+                      {detail.shippedAt
+                        ? new Date(detail.shippedAt).toLocaleString()
+                        : "recently"}
+                    </span>
+                  </div>
+                ) : (
+                  <p>No tracking code has been added yet.</p>
+                )}
+              </section>
+            )}
+
+            {canAddTracking && (
+              <form
+                className="tracking-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void onSaveTracking(carrier, trackingCode);
+                }}
+              >
+                <label>
+                  <span>Carrier</span>
+                  <input
+                    required
+                    minLength={2}
+                    maxLength={60}
+                    value={carrier}
+                    onChange={(event) => setCarrier(event.target.value)}
+                    placeholder="Carrier or courier"
+                  />
+                </label>
+                <label>
+                  <span>Tracking code</span>
+                  <input
+                    required
+                    minLength={3}
+                    maxLength={80}
+                    value={trackingCode}
+                    onChange={(event) => setTrackingCode(event.target.value)}
+                    placeholder="Code only, not a link"
+                  />
+                </label>
+                <button className="primary-action" disabled={busy}>
+                  {busy ? "Saving…" : "Save tracking"}{" "}
+                  {!busy && <ArrowRight size={18} />}
+                </button>
+              </form>
+            )}
+          </>
+        )}
+      </div>
+    </BottomSheet>
+  );
+}
+
+function DisputeSheet({
+  open,
+  deal,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  deal: Deal | null;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (detail: string) => Promise<void>;
+}) {
+  const [detail, setDetail] = useState("");
+  return (
+    <BottomSheet
+      open={open && Boolean(deal)}
+      onClose={onClose}
+      title="Open escrow dispute"
+    >
+      <form
+        className="create-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSubmit(detail);
+        }}
+      >
+        <div className="form-notice">
+          <ShieldCheck size={17} />
+          Opening a dispute freezes the escrow. Funds remain in the contract
+          until the configured arbitrator resolves the evidence.
+        </div>
+        <label>
+          <span>What happened?</span>
+          <textarea
+            required
+            minLength={10}
+            maxLength={500}
+            value={detail}
+            onChange={(event) => setDetail(event.target.value)}
+            placeholder="Describe the delivery, item, service, or communication problem."
+          />
+          <small>{detail.length}/500</small>
+        </label>
+        <button className="primary-action" disabled={busy}>
+          {busy ? "Preparing wallet…" : "Sign dispute action"}{" "}
+          {!busy && <ArrowRight size={18} />}
+        </button>
+      </form>
+    </BottomSheet>
+  );
+}
+
 function Toast({
   message,
   tone,
@@ -1497,20 +3417,106 @@ function Toast({
   );
 }
 
+function MarketplaceStatus({
+  state,
+  message,
+  onRetry,
+}: {
+  state: "loading" | "ready" | "error";
+  message: string;
+  onRetry: () => void;
+}) {
+  if (state === "ready") return null;
+  return (
+    <div
+      className={
+        state === "error"
+          ? "marketplace-status is-error"
+          : "marketplace-status"
+      }
+      role={state === "error" ? "alert" : "status"}
+    >
+      <span>
+        {state === "error" ? <WifiOff size={17} /> : <RefreshCw size={17} />}
+      </span>
+      <div>
+        <strong>
+          {state === "error"
+            ? "Marketplace data is unavailable"
+            : "Loading real marketplace data"}
+        </strong>
+        <p>
+          {state === "error"
+            ? message
+            : "Listings and payment readiness are being checked."}
+        </p>
+      </div>
+      {state === "error" && (
+        <button type="button" onClick={onRetry}>
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function EzWalletApp() {
   const [tab, setTab] = useState<Tab>("market");
   const [sheet, setSheet] = useState<SheetName>(null);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [bootstrapState, setBootstrapState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [bootstrapError, setBootstrapError] = useState("");
   const [config, setConfig] = useState<AppConfig>({
     feeBps: 100,
     network: "testnet",
     paymentsReady: false,
-    telegramReady: false,
+    paymentBlockers: [
+      "platform_wallet_missing",
+      "arbitrator_wallet_missing",
+    ],
   });
   const [session, setSession] = useState<User | null>(null);
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [walletBalanceNano, setWalletBalanceNano] = useState<string | null>(
+    null
+  );
+  const [walletBalanceState, setWalletBalanceState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const [applications, setApplications] = useState<ApplicationSummary[]>([]);
+  const [ownedListings, setOwnedListings] = useState<OwnerListing[]>([]);
+  const [selectedOwnerListing, setSelectedOwnerListing] =
+    useState<OwnerListing | null>(null);
+  const [ownedListingsState, setOwnedListingsState] = useState<
+    "loading" | "ready" | "error"
+  >("ready");
+  const [listingLifecyclePendingIds, setListingLifecyclePendingIds] = useState<
+    string[]
+  >([]);
+  const [savedListingIds, setSavedListingIds] = useState<string[]>([]);
+  const [favoritePendingIds, setFavoritePendingIds] = useState<string[]>([]);
+  const [favoritesAvailable, setFavoritesAvailable] = useState(true);
+  const [marketSavedOnly, setMarketSavedOnly] = useState(false);
+  const [marketFilters, setMarketFilters] = useState<MarketFilterForm>({
+    ...defaultMarketFilterForm,
+  });
+  const [marketFilterDraft, setMarketFilterDraft] =
+    useState<MarketFilterForm>({
+      ...defaultMarketFilterForm,
+    });
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const [storefront, setStorefront] = useState<PublicStorefront | null>(null);
+  const [storefrontState, setStorefrontState] = useState<
+    "loading" | "ready" | "error"
+  >("ready");
+  const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+  const [fulfillmentDetail, setFulfillmentDetail] =
+    useState<FulfillmentDetail | null>(null);
+  const [fulfillmentState, setFulfillmentState] = useState<
+    "loading" | "ready" | "error"
+  >("ready");
   const [query, setQuery] = useState("");
   const [marketCategory, setMarketCategory] = useState("All");
   const [workCategory, setWorkCategory] = useState("All");
@@ -1523,12 +3529,21 @@ export default function EzWalletApp() {
   const [paymentDeal, setPaymentDeal] = useState<{
     title: string;
     grossNano: string;
+    buyerFeeNano: string;
+    sellerFeeNano: string;
+    buyerTotalNano: string;
     platformFeeNano: string;
     sellerAmountNano: string;
+    escrowAddress: string;
+    escrowFundingAmountNano: string;
+    deliveryDeadlineUnix: number;
+    reviewWindowSeconds: number;
   } | null>(null);
   const [walletProofStatus, setWalletProofStatus] = useState<
     "idle" | "ready" | "verifying" | "verified" | "reconnect" | "error"
   >("idle");
+  const [legacyClaimToken, setLegacyClaimToken] = useState("");
+  const [legacyClaimActive, setLegacyClaimActive] = useState(false);
   const proofAttempt = useRef("");
   const wallet = useTonWallet();
   const walletAddress = useTonAddress(true);
@@ -1541,30 +3556,44 @@ export default function EzWalletApp() {
         session.walletVerifiedAt
     );
 
-  const isLocalPreview =
-    typeof window !== "undefined" &&
-    ["localhost", "127.0.0.1", "terminal.local"].includes(
-      window.location.hostname
-    );
+  const [telegramWebApp, setTelegramWebApp] =
+    useState<TelegramWebApp | undefined>();
+  const telegram = telegramWebApp?.initData ? telegramWebApp : undefined;
 
-  const telegramWebApp =
-    typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
-  const initData = telegramWebApp?.initData ?? "";
-  const telegram = initData ? telegramWebApp : undefined;
+  useEffect(() => {
+    const launchParameters = `${window.location.search}&${window.location.hash}`;
+    if (!launchParameters.includes("tgWebAppData")) return;
+    if (window.Telegram?.WebApp) {
+      const timer = window.setTimeout(
+        () => setTelegramWebApp(window.Telegram?.WebApp),
+        0
+      );
+      return () => window.clearTimeout(timer);
+    }
+
+    const scriptId = "telegram-web-app-bridge";
+    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+    const handleLoad = () => setTelegramWebApp(window.Telegram?.WebApp);
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://telegram.org/js/telegram-web-app.js";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+    script.addEventListener("load", handleLoad);
+    return () => script?.removeEventListener("load", handleLoad);
+  }, []);
 
   const apiFetch = useCallback(
     (path: string, options: RequestInit = {}) => {
       const headers = new Headers(options.headers);
-      if (initData) headers.set("x-telegram-init-data", initData);
-      if (!initData && isLocalPreview) {
-        headers.set("x-ezwallet-demo", "local-preview");
-      }
       if (options.body && !(options.body instanceof FormData)) {
         headers.set("content-type", "application/json");
       }
-      return fetch(path, { ...options, headers });
+      return fetch(path, { ...options, headers, credentials: "same-origin" });
     },
-    [initData, isLocalPreview]
+    []
   );
 
   const showToast = useCallback(
@@ -1575,38 +3604,219 @@ export default function EzWalletApp() {
     []
   );
 
-  const loadBootstrap = useCallback(async () => {
-    const response = await fetch("/api/bootstrap", { cache: "no-store" });
-    if (!response.ok) throw new Error("Could not load the marketplace.");
-    const data = (await response.json()) as {
-      listings: Listing[];
-      config: AppConfig;
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const claimToken = url.searchParams.get("claim") ?? "";
+    let timer: number | undefined;
+    if (IDENTITY_LINK_TOKEN_PATTERN.test(claimToken)) {
+      timer = window.setTimeout(() => {
+        setLegacyClaimToken(claimToken);
+        showToast(
+          "Legacy profile claim detected. Connect a wallet to finish securely.",
+          "neutral"
+        );
+      }, 0);
+    }
+    if (url.searchParams.has("claim")) {
+      url.searchParams.delete("claim");
+      const query = url.searchParams.toString();
+      window.history.replaceState(
+        {},
+        "",
+        `${url.pathname}${query ? `?${query}` : ""}${url.hash}`
+      );
+    }
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
     };
-    setListings(data.listings);
-    setConfig(data.config);
+  }, [showToast]);
+
+  const loadBootstrap = useCallback(async () => {
+    setBootstrapState("loading");
+    setBootstrapError("");
+    try {
+      const response = await fetch("/api/bootstrap", { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not load the marketplace.");
+      const data = (await response.json()) as {
+        listings: Listing[];
+        config: AppConfig;
+      };
+      setListings(data.listings);
+      setConfig(data.config);
+      setBootstrapState("ready");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Marketplace data could not be loaded.";
+      setBootstrapError(
+        `${message} Existing results may be incomplete. Check your connection and retry.`
+      );
+      setBootstrapState("error");
+      throw error;
+    }
   }, []);
 
   const loadSession = useCallback(async () => {
-    if (!initData && !isLocalPreview) return;
-    const response = await apiFetch("/api/session", { method: "POST" });
+    const response = await apiFetch("/api/session", {
+      method: "GET",
+      cache: "no-store",
+    });
     if (!response.ok) {
+      if (response.status === 401) {
+        setSession(null);
+        setDeals([]);
+        setApplications([]);
+        setOwnedListings([]);
+        setSavedListingIds([]);
+        setFavoritesAvailable(true);
+        setWalletBalanceNano(null);
+        setWalletBalanceState("idle");
+        return false;
+      }
       const data = (await response.json()) as { error?: string };
-      throw new Error(data.error ?? "Telegram session could not be verified.");
+      throw new Error(data.error ?? "Wallet session could not be verified.");
     }
     const data = (await response.json()) as { user: User; deals: Deal[] };
     setSession(data.user);
     setDeals(data.deals);
+    setOwnedListingsState("loading");
+    if (data.user.walletVerifiedAt) {
+      setWalletBalanceState("loading");
+      void apiFetch("/api/wallet/balance", { cache: "no-store" })
+        .then(async (balanceResponse) => {
+          if (!balanceResponse.ok) {
+            throw new Error("Wallet balance is unavailable.");
+          }
+          const balanceData = (await balanceResponse.json()) as {
+            balanceNano: string;
+          };
+          setWalletBalanceNano(balanceData.balanceNano);
+          setWalletBalanceState("ready");
+        })
+        .catch(() => {
+          setWalletBalanceNano(null);
+          setWalletBalanceState("error");
+        });
+    } else {
+      setWalletBalanceNano(null);
+      setWalletBalanceState("idle");
+    }
 
-    const applicationsResponse = await apiFetch("/api/applications", {
-      cache: "no-store",
-    });
-    if (applicationsResponse.ok) {
+    const [applicationsResult, favoritesResult, listingsResult] =
+      await Promise.allSettled([
+        apiFetch("/api/applications", { cache: "no-store" }),
+        apiFetch("/api/favorites", { cache: "no-store" }),
+        apiFetch("/api/listings", { cache: "no-store" }),
+      ]);
+    if (
+      applicationsResult.status === "fulfilled" &&
+      applicationsResult.value.ok
+    ) {
+      const applicationsResponse = applicationsResult.value;
       const applicationsData = (await applicationsResponse.json()) as {
         applications: ApplicationSummary[];
       };
       setApplications(applicationsData.applications);
     }
-  }, [apiFetch, initData, isLocalPreview]);
+    if (
+      favoritesResult.status === "fulfilled" &&
+      favoritesResult.value.ok
+    ) {
+      const favoritesResponse = favoritesResult.value;
+      const favoritesData = (await favoritesResponse.json()) as {
+        listingIds: string[];
+      };
+      setSavedListingIds(favoritesData.listingIds);
+      setFavoritesAvailable(true);
+    } else {
+      setFavoritesAvailable(false);
+    }
+    if (listingsResult.status === "fulfilled" && listingsResult.value.ok) {
+      const listingsData = (await listingsResult.value.json()) as {
+        listings: OwnerListing[];
+      };
+      setOwnedListings(listingsData.listings);
+      setOwnedListingsState("ready");
+    } else {
+      setOwnedListingsState("error");
+    }
+    return true;
+  }, [apiFetch]);
+
+  const reloadOwnedListings = useCallback(async () => {
+    if (!session) return;
+    setOwnedListingsState("loading");
+    try {
+      const response = await apiFetch("/api/listings", {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(data.error ?? "Your listings could not be loaded.");
+      }
+      const data = (await response.json()) as {
+        listings: OwnerListing[];
+      };
+      setOwnedListings(data.listings);
+      setOwnedListingsState("ready");
+    } catch (error) {
+      setOwnedListingsState("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Your listings could not be loaded.",
+        "error"
+      );
+    }
+  }, [apiFetch, session, showToast]);
+
+  const openWalletConnection = useCallback(async () => {
+    try {
+      tonConnectUi.setConnectionNetwork(
+        config.network === "mainnet" ? "-239" : "-3"
+      );
+      tonConnectUi.setConnectRequestParameters({ state: "loading" });
+      const response = await apiFetch("/api/wallet/challenge", {
+        method: "POST",
+        body: JSON.stringify(
+          legacyClaimToken ? { claimToken: legacyClaimToken } : {}
+        ),
+      });
+      const data = (await response.json()) as {
+        challenge?: string;
+        intent?: "sign_in" | "verify_or_link" | "claim_legacy_profile";
+        error?: string;
+      };
+      if (!response.ok || !data.challenge) {
+        throw new Error(data.error ?? "Wallet verification could not start.");
+      }
+      tonConnectUi.setConnectRequestParameters({
+        state: "ready",
+        value: { tonProof: data.challenge },
+      });
+      setLegacyClaimActive(data.intent === "claim_legacy_profile");
+      setWalletProofStatus(wallet ? "reconnect" : "ready");
+      if (wallet) await tonConnectUi.disconnect();
+      await tonConnectUi.openModal();
+    } catch (error) {
+      tonConnectUi.setConnectRequestParameters(null);
+      setWalletProofStatus("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Wallet verification could not start.",
+        "error"
+      );
+    }
+  }, [
+    apiFetch,
+    config.network,
+    legacyClaimToken,
+    showToast,
+    tonConnectUi,
+    wallet,
+  ]);
 
   useEffect(() => {
     telegram?.ready();
@@ -1618,9 +3828,12 @@ export default function EzWalletApp() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void Promise.all([loadBootstrap(), loadSession()]).catch((error) => {
+      void loadBootstrap().catch(() => undefined);
+      void loadSession().catch((error) => {
         showToast(
-          error instanceof Error ? error.message : "EzWallet could not start.",
+          error instanceof Error
+            ? error.message
+            : "Wallet session could not be verified.",
           "error"
         );
       });
@@ -1629,65 +3842,19 @@ export default function EzWalletApp() {
   }, [loadBootstrap, loadSession, showToast]);
 
   useEffect(() => {
-    if (!session) return;
-    if (
-      walletAddress &&
-      session.walletAddress === walletAddress &&
-      session.walletVerifiedAt
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    if (!wallet) {
-      tonConnectUi.setConnectionNetwork(
-        config.network === "mainnet" ? "-239" : "-3"
-      );
-    }
-    tonConnectUi.setConnectRequestParameters({ state: "loading" });
-    void apiFetch("/api/wallet/challenge", { method: "POST" })
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          challenge?: string;
-          error?: string;
-        };
-        if (!response.ok || !data.challenge) {
-          throw new Error(data.error ?? "Wallet verification could not start.");
-        }
-        if (cancelled) return;
-        tonConnectUi.setConnectRequestParameters({
-          state: "ready",
-          value: { tonProof: data.challenge },
-        });
-        setWalletProofStatus(wallet ? "reconnect" : "ready");
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        tonConnectUi.setConnectRequestParameters(null);
+    const tonProof = wallet?.connectItems?.tonProof;
+    if (!wallet || !tonProof) return;
+    if ("error" in tonProof) {
+      const timer = window.setTimeout(() => {
         setWalletProofStatus("error");
         showToast(
-          error instanceof Error
-            ? error.message
-            : "Wallet verification could not start.",
+          "This wallet did not provide a TON ownership proof. Try a compatible wallet or reconnect.",
           "error"
         );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    apiFetch,
-    config.network,
-    session,
-    showToast,
-    tonConnectUi,
-    wallet,
-    walletAddress,
-  ]);
-
-  useEffect(() => {
-    const tonProof = wallet?.connectItems?.tonProof;
-    if (!wallet || !tonProof || !("proof" in tonProof)) return;
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (!("proof" in tonProof)) return;
     const attempt = `${wallet.account.address}:${tonProof.proof.timestamp}`;
     if (proofAttempt.current === attempt) return;
     proofAttempt.current = attempt;
@@ -1703,14 +3870,27 @@ export default function EzWalletApp() {
       }),
     })
       .then(async (response) => {
-        const data = (await response.json()) as { error?: string };
+        const data = (await response.json()) as {
+          error?: string;
+          user?: User;
+        };
         if (!response.ok) {
           throw new Error(data.error ?? "Wallet proof failed.");
         }
+        if (data.user) setSession(data.user);
         setWalletProofStatus("verified");
         await loadSession();
         telegram?.HapticFeedback?.notificationOccurred("success");
-        showToast("TON wallet verified.", "success");
+        showToast(
+          legacyClaimActive
+            ? "Legacy profile linked to your verified wallet."
+            : "TON wallet verified.",
+          "success"
+        );
+        if (legacyClaimActive) {
+          setLegacyClaimToken("");
+          setLegacyClaimActive(false);
+        }
       })
       .catch((error) => {
         setWalletProofStatus("error");
@@ -1719,24 +3899,92 @@ export default function EzWalletApp() {
           "error"
         );
       });
-  }, [apiFetch, loadSession, showToast, telegram, wallet]);
+  }, [
+    apiFetch,
+    legacyClaimActive,
+    loadSession,
+    showToast,
+    telegram,
+    wallet,
+  ]);
 
-  const filteredMarket = useMemo(() => {
-    const normalized = query.toLowerCase().trim();
-    return listings.filter((listing) => {
-      if (listing.section !== "market") return false;
-      const queryMatches =
-        !normalized ||
-        `${listing.title} ${listing.description} ${listing.category}`
-          .toLowerCase()
-          .includes(normalized);
-      const categoryMatches =
-        marketCategory === "All" ||
-        listing.type.toLowerCase() === marketCategory.toLowerCase() ||
-        listing.category.toLowerCase() === marketCategory.toLowerCase();
-      return queryMatches && categoryMatches;
-    });
-  }, [listings, marketCategory, query]);
+  const savedListingSet = useMemo(
+    () => new Set(savedListingIds),
+    [savedListingIds]
+  );
+  const favoritePendingSet = useMemo(
+    () => new Set(favoritePendingIds),
+    [favoritePendingIds]
+  );
+  const listingLifecyclePendingSet = useMemo(
+    () => new Set(listingLifecyclePendingIds),
+    [listingLifecyclePendingIds]
+  );
+  const savedMarketCount = useMemo(
+    () =>
+      listings.filter(
+        (listing) =>
+          listing.section === "market" && savedListingSet.has(listing.id)
+      ).length,
+    [listings, savedListingSet]
+  );
+  const marketTotalListingCount = useMemo(
+    () => listings.filter((listing) => listing.section === "market").length,
+    [listings]
+  );
+  const marketAdvancedFilterCount = useMemo(
+    () => activeMarketFilterCount(marketFilters),
+    [marketFilters]
+  );
+
+  const filteredMarket = useMemo(
+    () =>
+      filterAndSortMarketListings(listings, {
+        query,
+        category: marketCategory,
+        savedOnly: marketSavedOnly,
+        savedListingIds: savedListingSet,
+        filters: marketFilters,
+      }),
+    [
+      listings,
+      marketCategory,
+      marketFilters,
+      marketSavedOnly,
+      query,
+      savedListingSet,
+    ]
+  );
+  const marketFilterDraftPreview = useMemo(() => {
+    try {
+      parseMarketPriceRange(marketFilterDraft);
+      return {
+        error: "",
+        count: filterAndSortMarketListings(listings, {
+          query,
+          category: marketCategory,
+          savedOnly: marketSavedOnly,
+          savedListingIds: savedListingSet,
+          filters: marketFilterDraft,
+        }).length,
+      };
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Choose a valid TON price range.",
+        count: null,
+      };
+    }
+  }, [
+    listings,
+    marketCategory,
+    marketFilterDraft,
+    marketSavedOnly,
+    query,
+    savedListingSet,
+  ]);
 
   const filteredWork = useMemo(() => {
     const normalized = query.toLowerCase().trim();
@@ -1752,10 +4000,115 @@ export default function EzWalletApp() {
         (workCategory === "Services" && listing.type === "service") ||
         (workCategory === "Jobs" && listing.type === "job") ||
         (workCategory === "Remote" && listing.location.includes("Remote")) ||
-        (workCategory === "Today" && listing.delivery.toLowerCase().includes("today"));
+        (workCategory === "Today" &&
+          listing.delivery.toLowerCase().includes("today")) ||
+        (workCategory === "Saved" && savedListingSet.has(listing.id));
       return queryMatches && categoryMatches;
     });
-  }, [listings, query, workCategory]);
+  }, [listings, query, savedListingSet, workCategory]);
+
+  const toggleFavorite = async (listing: Listing) => {
+    if (!session) {
+      showToast("Connect and verify a wallet to save listings.", "error");
+      void openWalletConnection();
+      return;
+    }
+    if (!favoritesAvailable) {
+      showToast(
+        "Saved listings are temporarily unavailable. Try reopening Easy Wallet.",
+        "error"
+      );
+      return;
+    }
+    if (favoritePendingSet.has(listing.id)) return;
+
+    const wasSaved = savedListingSet.has(listing.id);
+    setFavoritePendingIds((current) => [...current, listing.id]);
+    setSavedListingIds((current) =>
+      wasSaved
+        ? current.filter((listingId) => listingId !== listing.id)
+        : [...current, listing.id]
+    );
+
+    try {
+      const response = wasSaved
+        ? await apiFetch(`/api/favorites/${encodeURIComponent(listing.id)}`, {
+            method: "DELETE",
+          })
+        : await apiFetch("/api/favorites", {
+            method: "POST",
+            body: JSON.stringify({ listingId: listing.id }),
+          });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(
+          data.error ??
+            (wasSaved
+              ? "Saved listing could not be removed."
+              : "Listing could not be saved.")
+        );
+      }
+      telegram?.HapticFeedback?.notificationOccurred("success");
+      showToast(
+        wasSaved ? "Removed from saved listings." : "Saved to your profile.",
+        "success"
+      );
+    } catch (error) {
+      setSavedListingIds((current) =>
+        wasSaved
+          ? current.includes(listing.id)
+            ? current
+            : [...current, listing.id]
+          : current.filter((listingId) => listingId !== listing.id)
+      );
+      telegram?.HapticFeedback?.notificationOccurred("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Saved listings could not be updated.",
+        "error"
+      );
+    } finally {
+      setFavoritePendingIds((current) =>
+        current.filter((listingId) => listingId !== listing.id)
+      );
+    }
+  };
+
+  const toggleSavedMarket = () => {
+    if (!session) {
+      showToast("Connect and verify a wallet to view saved listings.", "error");
+      void openWalletConnection();
+      return;
+    }
+    setMarketSavedOnly((current) => !current);
+  };
+
+  const loadStorefront = async (ownerId: number) => {
+    setStorefront(null);
+    setStorefrontState("loading");
+    setSheet("storefront");
+    try {
+      const response = await fetch(`/api/profiles/${ownerId}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const data = (await response.json()) as PublicStorefront & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Storefront could not be loaded.");
+      }
+      setStorefront(data);
+      setStorefrontState("ready");
+    } catch (error) {
+      setStorefrontState("error");
+      showToast(
+        error instanceof Error ? error.message : "Storefront could not be loaded.",
+        "error"
+      );
+    }
+  };
 
   const openListing = (listing: Listing) => {
     telegram?.HapticFeedback?.impactOccurred("light");
@@ -1765,37 +4118,44 @@ export default function EzWalletApp() {
 
   const openCreate = (section: "market" | "work" = tab === "work" ? "work" : "market") => {
     telegram?.HapticFeedback?.impactOccurred("light");
+    if (!session) {
+      showToast("Connect and verify a wallet to publish a listing.", "error");
+      void openWalletConnection();
+      return;
+    }
     setCreateSection(section);
     setSheet("create");
+  };
+
+  const uploadListingImage = async (image: File | null) => {
+    if (!image) return undefined;
+    const mediaForm = new FormData();
+    mediaForm.set("file", image);
+    const mediaResponse = await apiFetch("/api/media", {
+      method: "POST",
+      body: mediaForm,
+    });
+    const mediaData = (await mediaResponse.json()) as {
+      key?: string;
+      error?: string;
+    };
+    if (!mediaResponse.ok || !mediaData.key) {
+      throw new Error(mediaData.error ?? "Image could not be uploaded.");
+    }
+    return mediaData.key;
   };
 
   const publishListing = async (form: CreateForm, image: File | null) => {
     setBusy(true);
     try {
-      let mediaKey: string | undefined;
-      if (image) {
-        const mediaForm = new FormData();
-        mediaForm.set("file", image);
-        const mediaResponse = await apiFetch("/api/media", {
-          method: "POST",
-          body: mediaForm,
-        });
-        const mediaData = (await mediaResponse.json()) as {
-          key?: string;
-          error?: string;
-        };
-        if (!mediaResponse.ok || !mediaData.key) {
-          throw new Error(mediaData.error ?? "Image could not be uploaded.");
-        }
-        mediaKey = mediaData.key;
-      }
+      const mediaKey = await uploadListingImage(image);
       const response = await apiFetch("/api/listings", {
         method: "POST",
         body: JSON.stringify({ ...form, mediaKey }),
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Listing could not be published.");
-      await loadBootstrap();
+      await Promise.all([loadBootstrap(), loadSession()]);
       setSheet(null);
       setTab(form.section);
       telegram?.HapticFeedback?.notificationOccurred("success");
@@ -1811,14 +4171,71 @@ export default function EzWalletApp() {
     }
   };
 
+  const updateListing = async (form: CreateForm, image: File | null) => {
+    if (!selectedOwnerListing) return;
+    setBusy(true);
+    try {
+      const mediaKey = await uploadListingImage(image);
+      const response = await apiFetch(
+        `/api/listings/${encodeURIComponent(selectedOwnerListing.id)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            ...form,
+            mediaKey,
+            expectedUpdatedAt: selectedOwnerListing.updatedAt,
+          }),
+        }
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        listing?: OwnerListing;
+      };
+      if (!response.ok || !data.listing) {
+        throw new Error(data.error ?? "Listing changes could not be saved.");
+      }
+      setOwnedListings((current) =>
+        current.map((listing) =>
+          listing.id === data.listing?.id ? data.listing : listing
+        )
+      );
+      await loadBootstrap();
+      setSelectedOwnerListing(null);
+      setSheet("listings");
+      telegram?.HapticFeedback?.notificationOccurred("success");
+      showToast("Listing changes are live.", "success");
+    } catch (error) {
+      telegram?.HapticFeedback?.notificationOccurred("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Listing changes could not be saved.",
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const startPayment = async (listing: Listing) => {
     if (!session) {
-      showToast("Open EzWallet from Telegram to start a verified deal.", "error");
+      showToast("Connect and verify a wallet to start a deal.", "error");
+      void openWalletConnection();
+      return;
+    }
+    if (
+      !listing.ownerWalletVerified ||
+      listing.ownerWalletNetwork !== config.network
+    ) {
+      showToast(
+        `The seller needs to verify a ${config.network} TON wallet before this listing can be purchased.`,
+        "error"
+      );
       return;
     }
     if (!wallet || !walletAddress) {
       setSheet(null);
-      await tonConnectUi.openModal();
+      await openWalletConnection();
       showToast("Connect a TON wallet, then continue the deal.");
       return;
     }
@@ -1829,18 +4246,33 @@ export default function EzWalletApp() {
           : "Finish TON wallet verification before paying.",
         "error"
       );
+      void openWalletConnection();
       return;
     }
     if (!config.paymentsReady) {
-      showToast("Payments are waiting for the platform fee wallet.", "error");
+      showToast(
+        paymentReadinessMessage(config.paymentBlockers, config.network),
+        "error"
+      );
       return;
     }
 
+    setSelectedListing(listing);
+    setSheet("checkout");
+  };
+
+  const confirmPayment = async (
+    listing: Listing,
+    deliveryAddress?: DeliveryAddressForm
+  ) => {
     setBusy(true);
     try {
       const dealResponse = await apiFetch("/api/deals", {
         method: "POST",
-        body: JSON.stringify({ listingId: listing.id }),
+        body: JSON.stringify({
+          listingId: listing.id,
+          ...(deliveryAddress ? { deliveryAddress } : {}),
+        }),
       });
       const dealData = (await dealResponse.json()) as {
         error?: string;
@@ -1848,8 +4280,15 @@ export default function EzWalletApp() {
           id: string;
           title: string;
           grossNano: string;
+          buyerFeeNano: string;
+          sellerFeeNano: string;
+          buyerTotalNano: string;
           platformFeeNano: string;
           sellerAmountNano: string;
+          escrowAddress: string;
+          escrowFundingAmountNano: string;
+          deliveryDeadlineUnix: number;
+          reviewWindowSeconds: number;
         };
         transaction?: Parameters<typeof tonConnectUi.sendTransaction>[0];
       };
@@ -1891,7 +4330,8 @@ export default function EzWalletApp() {
 
   const openApply = (listing: Listing) => {
     if (!session) {
-      showToast("Open EzWallet from Telegram to apply.", "error");
+      showToast("Connect and verify a wallet to apply.", "error");
+      void openWalletConnection();
       return;
     }
     setSelectedListing(listing);
@@ -1928,6 +4368,64 @@ export default function EzWalletApp() {
       );
     } finally {
       setBusy(false);
+    }
+  };
+
+  const updateListingLifecycle = async (
+    listing: OwnerListing,
+    action: "pause" | "activate" | "close"
+  ) => {
+    if (listingLifecyclePendingSet.has(listing.id)) return;
+    setListingLifecyclePendingIds((current) => [...current, listing.id]);
+    try {
+      const response = await apiFetch(
+        `/api/listings/${encodeURIComponent(listing.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ action }),
+        }
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        listing?: {
+          id: string;
+          status: OwnerListing["status"];
+          updatedAt: string;
+        };
+      };
+      if (!response.ok || !data.listing) {
+        throw new Error(data.error ?? "The listing could not be updated.");
+      }
+      setOwnedListings((current) =>
+        current.map((candidate) =>
+          candidate.id === data.listing?.id
+            ? { ...candidate, status: data.listing.status }
+            : candidate
+        )
+      );
+      await loadBootstrap();
+      telegram?.HapticFeedback?.notificationOccurred("success");
+      showToast(
+        action === "pause"
+          ? "Listing paused and removed from discovery."
+          : action === "activate"
+            ? "Listing is live again."
+            : "Listing closed permanently.",
+        "success"
+      );
+    } catch (error) {
+      telegram?.HapticFeedback?.notificationOccurred("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "The listing could not be updated.",
+        "error"
+      );
+      await reloadOwnedListings();
+    } finally {
+      setListingLifecyclePendingIds((current) =>
+        current.filter((listingId) => listingId !== listing.id)
+      );
     }
   };
 
@@ -1984,26 +4482,130 @@ export default function EzWalletApp() {
     }
   };
 
+  const openFulfillment = async (deal: Deal) => {
+    setSelectedDeal(deal);
+    setFulfillmentDetail(null);
+    setFulfillmentState("loading");
+    setSheet("fulfillment");
+    try {
+      const response = await apiFetch(
+        `/api/deals/${encodeURIComponent(deal.id)}/fulfillment`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as {
+        fulfillment?: FulfillmentDetail;
+        error?: string;
+      };
+      if (!response.ok || !data.fulfillment) {
+        throw new Error(
+          data.error ?? "Fulfillment details could not be loaded."
+        );
+      }
+      setFulfillmentDetail(data.fulfillment);
+      setFulfillmentState("ready");
+    } catch (error) {
+      setFulfillmentState("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Fulfillment details could not be loaded.",
+        "error"
+      );
+    }
+  };
+
+  const saveTracking = async (carrier: string, trackingCode: string) => {
+    if (!selectedDeal) return;
+    setBusy(true);
+    try {
+      const response = await apiFetch(
+        `/api/deals/${encodeURIComponent(selectedDeal.id)}/fulfillment`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ carrier, trackingCode }),
+        }
+      );
+      const data = (await response.json()) as {
+        fulfillment?: Pick<
+          FulfillmentDetail,
+          "mode" | "carrier" | "trackingCode" | "shippedAt" | "updatedAt"
+        >;
+        error?: string;
+      };
+      if (!response.ok || !data.fulfillment) {
+        throw new Error(data.error ?? "Tracking details could not be saved.");
+      }
+      setFulfillmentDetail((current) =>
+        current ? { ...current, ...data.fulfillment } : current
+      );
+      await loadSession();
+      telegram?.HapticFeedback?.notificationOccurred("success");
+      showToast("Shipment tracking saved.", "success");
+    } catch (error) {
+      telegram?.HapticFeedback?.notificationOccurred("error");
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Tracking details could not be saved.",
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const transitionDeal = async (
     deal: Deal,
-    action: "cancel" | "mark_delivered" | "confirm_received" | "dispute"
+    action:
+      | "mark_delivered"
+      | "confirm_received"
+      | "dispute"
+      | "refund_expired"
+      | "release_after_review",
+    detail = ""
   ) => {
     setBusy(true);
     try {
       const response = await apiFetch(`/api/deals/${deal.id}/transition`, {
         method: "POST",
-        body: JSON.stringify({ action, detail: "" }),
+        body: JSON.stringify({ action, detail }),
       });
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        deal?: { id: string; status: string };
+        action?: { id: string; kind: string; status: string };
+        transaction?: Parameters<typeof tonConnectUi.sendTransaction>[0];
+      };
       if (!response.ok) throw new Error(data.error ?? "Deal could not be updated.");
-      await loadSession();
-      showToast(
-        action === "confirm_received"
-          ? "Deal completed. You can now leave a review."
-          : "Deal updated.",
-        "success"
-      );
+
+      if (data.transaction && data.action) {
+        telegram?.HapticFeedback?.impactOccurred("medium");
+        const result = await tonConnectUi.sendTransaction(data.transaction);
+        const submittedResponse = await apiFetch(
+          `/api/deals/${deal.id}/actions/${data.action.id}/submitted`,
+          {
+            method: "POST",
+            body: JSON.stringify({ boc: result.boc, traceId: result.traceId }),
+          }
+        );
+        if (!submittedResponse.ok) {
+          const submitted = (await submittedResponse.json()) as {
+            error?: string;
+          };
+          throw new Error(
+            submitted.error ??
+              "Wallet sent the action, but its confirmation record needs attention."
+          );
+        }
+        setSheet(null);
+        setSelectedDeal(null);
+        telegram?.HapticFeedback?.notificationOccurred("success");
+        showToast("Escrow action submitted. Waiting for TON confirmation.", "success");
+        return;
+      }
+      throw new Error("The escrow action did not include a wallet request.");
     } catch (error) {
+      telegram?.HapticFeedback?.notificationOccurred("error");
       showToast(
         error instanceof Error ? error.message : "Deal could not be updated.",
         "error"
@@ -2018,6 +4620,51 @@ export default function EzWalletApp() {
     setQuery("");
     telegram?.HapticFeedback?.impactOccurred("light");
   };
+  const openMarketFilters = () => {
+    setMarketFilterDraft({ ...marketFilters });
+    setSheet("market-filters");
+  };
+  const resetMarketDiscovery = () => {
+    setQuery("");
+    setMarketCategory("All");
+    setMarketSavedOnly(false);
+    setMarketFilters({ ...defaultMarketFilterForm });
+    setMarketFilterDraft({ ...defaultMarketFilterForm });
+  };
+  const applyMarketFilters = () => {
+    if (marketFilterDraftPreview.error) return;
+    setMarketFilters({ ...marketFilterDraft });
+    setSheet(null);
+    telegram?.HapticFeedback?.impactOccurred("light");
+  };
+
+  const disconnectWallet = async () => {
+    try {
+      const response = await apiFetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(data.error ?? "The browser session could not be closed.");
+      }
+      await tonConnectUi.disconnect();
+      setSession(null);
+      setDeals([]);
+      setApplications([]);
+      setOwnedListings([]);
+      setSavedListingIds([]);
+      setMarketSavedOnly(false);
+      setWorkCategory("All");
+      setWalletProofStatus("idle");
+      setWalletBalanceNano(null);
+      setWalletBalanceState("idle");
+      proofAttempt.current = "";
+      showToast("Wallet disconnected and browser session closed.", "success");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Wallet could not be disconnected.",
+        "error"
+      );
+    }
+  };
 
   return (
     <div className="page-shell">
@@ -2025,10 +4672,24 @@ export default function EzWalletApp() {
         <AppHeader
           session={session}
           connected={Boolean(wallet)}
+          onWallet={() => {
+            if (wallet) {
+              changeTab("wallet");
+              return;
+            }
+            void openWalletConnection();
+          }}
           onCreate={() => openCreate()}
         />
 
         <div className="screen-scroll">
+          <MarketplaceStatus
+            state={bootstrapState}
+            message={bootstrapError}
+            onRetry={() => {
+              void loadBootstrap().catch(() => undefined);
+            }}
+          />
           {tab === "market" && (
             <MarketScreen
               listings={filteredMarket}
@@ -2037,6 +4698,19 @@ export default function EzWalletApp() {
               category={marketCategory}
               setCategory={setMarketCategory}
               onOpen={openListing}
+              onOpenFilters={openMarketFilters}
+              onResetFilters={resetMarketDiscovery}
+              onCreate={() => openCreate("market")}
+              savedListingIds={savedListingSet}
+              savingListingIds={favoritePendingSet}
+              signedIn={Boolean(session)}
+              savedOnly={marketSavedOnly}
+              savedCount={savedMarketCount}
+              totalListingCount={marketTotalListingCount}
+              advancedFilterCount={marketAdvancedFilterCount}
+              favoritesAvailable={favoritesAvailable}
+              onToggleSavedOnly={toggleSavedMarket}
+              onToggleSave={(listing) => void toggleFavorite(listing)}
             />
           )}
           {tab === "work" && (
@@ -2045,9 +4719,29 @@ export default function EzWalletApp() {
               query={query}
               setQuery={setQuery}
               category={workCategory}
-              setCategory={setWorkCategory}
+              setCategory={(value) => {
+                if (value === "Saved" && !session) {
+                  showToast(
+                    "Connect and verify a wallet to view saved listings.",
+                    "error"
+                  );
+                  void openWalletConnection();
+                  return;
+                }
+                if (value === "Saved" && !favoritesAvailable) {
+                  showToast(
+                    "Saved listings are temporarily unavailable. Try reopening Easy Wallet.",
+                    "error"
+                  );
+                  return;
+                }
+                setWorkCategory(value);
+              }}
               onOpen={openListing}
               onCreate={() => openCreate("work")}
+              savedListingIds={savedListingSet}
+              savingListingIds={favoritePendingSet}
+              onToggleSave={(listing) => void toggleFavorite(listing)}
             />
           )}
           {tab === "wallet" && (
@@ -2056,24 +4750,45 @@ export default function EzWalletApp() {
               walletConnected={Boolean(wallet)}
               deals={deals}
               network={config.network}
+              paymentsReady={config.paymentsReady}
+              paymentBlockers={config.paymentBlockers}
               walletVerified={walletVerified}
               currentUserId={session?.id}
-              onConnect={() => void tonConnectUi.openModal()}
-              onDisconnect={() => void tonConnectUi.disconnect()}
-              onDealAction={transitionDeal}
+              onConnect={() => void openWalletConnection()}
+              onDisconnect={() => void disconnectWallet()}
+              onFulfillment={(deal) => void openFulfillment(deal)}
+              onDealAction={(deal, action) => {
+                if (action === "dispute") {
+                  setSelectedDeal(deal);
+                  setSheet("dispute");
+                  return;
+                }
+                void transitionDeal(deal, action);
+              }}
             />
           )}
           {tab === "profile" && (
             <ProfileScreen
               user={session}
-              listingCount={listings.filter(
-                (listing) => listing.ownerId === session?.id
-              ).length}
+              listingCount={ownedListings.length}
               connected={Boolean(wallet)}
-              onCreate={() => openCreate()}
+              balanceNano={walletBalanceNano}
+              balanceState={walletBalanceState}
+              onManageListings={() => {
+                if (!session) {
+                  showToast(
+                    "Connect and verify a wallet to manage listings.",
+                    "error"
+                  );
+                  void openWalletConnection();
+                  return;
+                }
+                setSheet("listings");
+              }}
               onEdit={() => {
                 if (session) setSheet("profile");
               }}
+              onVerification={() => setSheet("verification")}
               onSafety={() => {
                 window.location.assign("/safety");
               }}
@@ -2092,6 +4807,7 @@ export default function EzWalletApp() {
             <ListingSheet
               listing={selectedListing}
               currentUser={session}
+              network={config.network}
               hasApplied={applications.some(
                 (application) =>
                   application.listingId === selectedListing.id &&
@@ -2104,10 +4820,73 @@ export default function EzWalletApp() {
                 setSelectedListing(listing);
                 setSheet("report");
               }}
+              onViewStore={(listing) => void loadStorefront(listing.ownerId)}
+              onToggleSave={(listing) => void toggleFavorite(listing)}
+              saved={savedListingSet.has(selectedListing.id)}
+              saving={favoritePendingSet.has(selectedListing.id)}
               busy={busy}
             />
           </BottomSheet>
         )}
+
+        <BottomSheet
+          open={sheet === "verification"}
+          onClose={() => setSheet(null)}
+          title="Identity & trust"
+        >
+          <VerificationSheet user={session} />
+        </BottomSheet>
+
+        <BottomSheet
+          open={sheet === "storefront"}
+          onClose={() => setSheet(null)}
+          title={storefront?.profile.displayName ?? "Storefront"}
+        >
+          <StorefrontSheet
+            storefront={storefront}
+            state={storefrontState}
+            onRetry={() => {
+              if (selectedListing) {
+                void loadStorefront(selectedListing.ownerId);
+              }
+            }}
+            onOpenListing={(listing) => {
+              setSelectedListing(listing);
+              setSheet("listing");
+            }}
+          />
+        </BottomSheet>
+
+        <ListingManagerSheet
+          open={sheet === "listings"}
+          listings={ownedListings}
+          state={ownedListingsState}
+          pendingIds={listingLifecyclePendingSet}
+          onClose={() => setSheet(null)}
+          onRetry={() => void reloadOwnedListings()}
+          onCreate={() => {
+            setCreateSection(tab === "work" ? "work" : "market");
+            setSheet("create");
+          }}
+          onEdit={(listing) => {
+            setSelectedOwnerListing(listing);
+            setSheet("edit");
+          }}
+          onAction={updateListingLifecycle}
+        />
+
+        <MarketFiltersSheet
+          open={sheet === "market-filters"}
+          draft={marketFilterDraft}
+          error={marketFilterDraftPreview.error}
+          resultCount={marketFilterDraftPreview.count}
+          onChange={setMarketFilterDraft}
+          onClear={() =>
+            setMarketFilterDraft({ ...defaultMarketFilterForm })
+          }
+          onClose={() => setSheet(null)}
+          onApply={applyMarketFilters}
+        />
 
         {sheet === "create" && (
           <CreateSheet
@@ -2115,6 +4894,22 @@ export default function EzWalletApp() {
             initialSection={createSection}
             onClose={() => setSheet(null)}
             onSubmit={publishListing}
+            busy={busy}
+            canPublish={Boolean(session)}
+          />
+        )}
+
+        {sheet === "edit" && selectedOwnerListing && (
+          <CreateSheet
+            key={`${selectedOwnerListing.id}:${selectedOwnerListing.updatedAt}`}
+            open
+            listing={selectedOwnerListing}
+            initialSection={selectedOwnerListing.section}
+            onClose={() => {
+              setSelectedOwnerListing(null);
+              setSheet("listings");
+            }}
+            onSubmit={updateListing}
             busy={busy}
             canPublish={Boolean(session)}
           />
@@ -2149,6 +4944,38 @@ export default function EzWalletApp() {
           onSubmit={submitReport}
         />
 
+        <DisputeSheet
+          key={selectedDeal?.id ?? "no-dispute"}
+          open={sheet === "dispute"}
+          deal={selectedDeal}
+          busy={busy}
+          onClose={() => {
+            setSheet(null);
+            setSelectedDeal(null);
+          }}
+          onSubmit={async (detail) => {
+            if (selectedDeal) {
+              await transitionDeal(selectedDeal, "dispute", detail);
+            }
+          }}
+        />
+
+        <FulfillmentSheet
+          key={selectedDeal?.id ?? "no-fulfillment"}
+          open={sheet === "fulfillment"}
+          deal={selectedDeal}
+          detail={fulfillmentDetail}
+          state={fulfillmentState}
+          busy={busy}
+          currentUserId={session?.id}
+          onClose={() => {
+            setSheet(null);
+            setSelectedDeal(null);
+            setFulfillmentDetail(null);
+          }}
+          onSaveTracking={saveTracking}
+        />
+
         <PaymentSuccessSheet
           open={sheet === "payment"}
           deal={paymentDeal}
@@ -2156,6 +4983,19 @@ export default function EzWalletApp() {
             setSheet(null);
             setTab("wallet");
           }}
+        />
+
+        <PaymentQuoteSheet
+          key={
+            sheet === "checkout"
+              ? `checkout:${selectedListing?.id ?? "none"}`
+              : "checkout:closed"
+          }
+          open={sheet === "checkout"}
+          listing={selectedListing}
+          busy={busy}
+          onClose={() => setSheet("listing")}
+          onConfirm={confirmPayment}
         />
 
         {toast && <Toast message={toast.message} tone={toast.tone} />}

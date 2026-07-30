@@ -1,26 +1,24 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
-import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
-
-const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
-  "00000000-0000-4000-8000-000000000000";
-
-const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const publicPreviewHost = process.env.EZWALLET_PREVIEW_HOST?.trim();
+const isCloudflareProduction =
+  process.env.CLOUDFLARE_ENV?.trim() === "production";
 const localVariableNames = [
   "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_BOT_USERNAME",
   "TELEGRAM_WEBHOOK_SECRET",
   "MINI_APP_URL",
   "PLATFORM_FEE_ADDRESS",
+  "ESCROW_ARBITRATOR_ADDRESS",
   "TON_NETWORK",
   "TONCENTER_API_KEY",
   "RECONCILE_SECRET",
+  "DEAL_DATA_ENCRYPTION_KEY",
   "ENVIRONMENT",
-  "SEED_DEMO_DATA",
 ] as const;
 const localVars = Object.fromEntries(
   localVariableNames.flatMap((name) => {
@@ -28,29 +26,6 @@ const localVars = Object.fromEntries(
     return value ? [[name, value]] : [];
   })
 );
-
-const localBindingConfig = {
-  main: "./worker/index.ts",
-  compatibility_flags: ["nodejs_compat"],
-  vars: localVars,
-  d1_databases: d1
-    ? [
-        {
-          binding: d1,
-          database_name: "site-creator-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
-        },
-      ]
-    : [],
-  r2_buckets: r2
-    ? [
-        {
-          binding: r2,
-          bucket_name: "site-creator-r2",
-        },
-      ]
-    : [],
-};
 
 export default defineConfig(async () => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
@@ -78,8 +53,15 @@ export default defineConfig(async () => {
       vinext(),
       sites(),
       cloudflare({
+        configPath: "./wrangler.jsonc",
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-        config: localBindingConfig,
+        ...(!isCloudflareProduction && Object.keys(localVars).length
+          ? {
+              config: (config) => ({
+                vars: { ...config.vars, ...localVars },
+              }),
+            }
+          : {}),
       }),
     ],
   };

@@ -1,6 +1,7 @@
 export const NANO_PER_TON = 1_000_000_000n;
 export const PLATFORM_FEE_BPS = 100n;
 export const BPS_DENOMINATOR = 10_000n;
+export const MIN_TRANSACTION_AMOUNT_NANO = 1_000_000n;
 
 export function tonToNano(input: string) {
   const normalized = input.trim();
@@ -14,6 +15,14 @@ export function tonToNano(input: string) {
   ).toString();
 }
 
+export function marketplaceAmountToNano(input: string) {
+  const amountNano = tonToNano(input);
+  if (BigInt(amountNano) < MIN_TRANSACTION_AMOUNT_NANO) {
+    throw new Error("The minimum transaction amount is 0.001 TON.");
+  }
+  return amountNano;
+}
+
 export function nanoToTon(input: string, maximumFractionDigits = 2) {
   const value = BigInt(input);
   const whole = value / NANO_PER_TON;
@@ -22,12 +31,28 @@ export function nanoToTon(input: string, maximumFractionDigits = 2) {
   return trimmed ? `${whole}.${trimmed}` : whole.toString();
 }
 
-export function splitPlatformFee(grossNano: bigint) {
-  const platformFeeNano =
-    (grossNano * PLATFORM_FEE_BPS + BPS_DENOMINATOR - 1n) /
+export function calculateTransactionFees(baseNano: bigint) {
+  if (baseNano <= 0n) {
+    throw new Error("The transaction amount must be positive.");
+  }
+
+  const partyFeeNano =
+    (baseNano * PLATFORM_FEE_BPS + BPS_DENOMINATOR - 1n) /
     BPS_DENOMINATOR;
+  if (partyFeeNano >= baseNano) {
+    throw new Error("The transaction amount is too small.");
+  }
+
+  const buyerFeeNano = partyFeeNano;
+  const sellerFeeNano = partyFeeNano;
+  const platformFeeNano = buyerFeeNano + sellerFeeNano;
+
   return {
+    baseNano,
+    buyerFeeNano,
+    sellerFeeNano,
+    buyerTotalNano: baseNano + buyerFeeNano,
     platformFeeNano,
-    sellerAmountNano: grossNano - platformFeeNano,
+    sellerAmountNano: baseNano - sellerFeeNano,
   };
 }

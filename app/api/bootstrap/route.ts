@@ -1,13 +1,12 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getBinding, getDb } from "@/db";
-import { ensureDatabase } from "@/db/init";
 import { listings, users } from "@/db/schema";
+import { inspectPaymentConfiguration } from "@/lib/payment-configuration";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    await ensureDatabase();
     const db = getDb();
     const rows = await db
       .select({
@@ -21,6 +20,10 @@ export async function GET(request: Request) {
         currency: listings.currency,
         imageUrl: listings.imageUrl,
         location: listings.location,
+        latitudeE6: listings.latitudeE6,
+        longitudeE6: listings.longitudeE6,
+        locationRadiusMeters: listings.locationRadiusMeters,
+        fulfillmentMode: listings.fulfillmentMode,
         delivery: listings.delivery,
         status: listings.status,
         createdAt: listings.createdAt,
@@ -31,25 +34,42 @@ export async function GET(request: Request) {
         ownerRatingMilli: users.ratingMilli,
         ownerReviewCount: users.reviewCount,
         ownerDealsCompleted: users.dealsCompleted,
+        ownerWalletVerifiedAt: users.walletVerifiedAt,
+        ownerWalletNetwork: users.walletNetwork,
       })
       .from(listings)
       .innerJoin(users, eq(listings.ownerId, users.id))
-      .where(eq(listings.status, "active"))
+      .where(
+        and(
+          eq(listings.status, "active"),
+          eq(listings.moderationStatus, "approved"),
+          eq(users.moderationStatus, "active")
+        )
+      )
       .orderBy(desc(listings.createdAt));
 
-    const url = new URL(request.url);
-    const hasFeeAddress =
-      Boolean(getBinding("PLATFORM_FEE_ADDRESS")) ||
-      ["localhost", "127.0.0.1", "terminal.local"].includes(url.hostname);
+    const network =
+      getBinding("TON_NETWORK") === "mainnet" ? "mainnet" : "testnet";
+    const paymentConfiguration = inspectPaymentConfiguration({
+      network,
+      platformFeeAddress: getBinding("PLATFORM_FEE_ADDRESS"),
+      arbitratorAddress: getBinding("ESCROW_ARBITRATOR_ADDRESS"),
+    });
+
+    const publicListings = rows.map(
+      ({ ownerWalletVerifiedAt, ...listing }) => ({
+        ...listing,
+        ownerWalletVerified: Boolean(ownerWalletVerifiedAt),
+      })
+    );
 
     return Response.json({
-      listings: rows,
+      listings: publicListings,
       config: {
         feeBps: 100,
-        network:
-          getBinding("TON_NETWORK") === "mainnet" ? "mainnet" : "testnet",
-        paymentsReady: hasFeeAddress,
-        telegramReady: Boolean(getBinding("TELEGRAM_BOT_TOKEN")),
+        network,
+        paymentsReady: paymentConfiguration.ready,
+        paymentBlockers: paymentConfiguration.blockers,
       },
     });
   } catch (error) {

@@ -1,11 +1,19 @@
-import { eq } from "drizzle-orm";
-import { getBinding, getDb } from "@/db";
-import { ensureDatabase } from "@/db/init";
-import { users } from "@/db/schema";
+import { and, eq, gt, isNull } from "drizzle-orm";
+import { getDb } from "@/db";
+import { authSessions, users } from "@/db/schema";
 import { noStoreJson } from "./security";
-import { validateTelegramInitData } from "./telegram";
+import {
+  hashSessionToken,
+  sessionRequestHasSafeOrigin,
+  sessionTokenFromRequest,
+} from "./session-security";
 
 export type AuthenticatedUser = typeof users.$inferSelect;
+export type AuthenticationMethod = "wallet";
+export type AuthenticatedRequestContext = {
+  user: AuthenticatedUser;
+  method: AuthenticationMethod;
+};
 
 export class AuthenticationError extends Error {
   constructor(
@@ -17,87 +25,86 @@ export class AuthenticationError extends Error {
   }
 }
 
-function isLocalPreview(request: Request) {
-  const hostname = new URL(request.url).hostname;
-  return (
-    request.headers.get("x-ezwallet-demo") === "local-preview" &&
-    (hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "terminal.local")
+async function authenticateWalletSession(
+  request: Request
+): Promise<AuthenticatedRequestContext | null> {
+  const token = sessionTokenFromRequest(request);
+  if (!token) return null;
+  if (!sessionRequestHasSafeOrigin(request)) {
+    throw new AuthenticationError(
+      "The wallet session origin could not be verified.",
+      403
+    );
+  }
+
+  const db = getDb();
+  const sessionId = await hashSessionToken(token);
+  const now = new Date().toISOString();
+  const [session] = await db
+    .select()
+    .from(authSessions)
+    .where(
+      and(
+        eq(authSessions.id, sessionId),
+        isNull(authSessions.revokedAt),
+        gt(authSessions.expiresAt, now)
+      )
+    )
+    .limit(1);
+  if (!session) return null;
+
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, session.userId))
+    .limit(1);
+  if (!user) return null;
+  if (user.moderationStatus === "banned") {
+    throw new AuthenticationError(
+      "This Easy Wallet profile has been suspended.",
+      403
+    );
+  }
+  if (Date.parse(session.lastSeenAt) < Date.now() - 60 * 60 * 1000) {
+    await db
+      .update(authSessions)
+      .set({ lastSeenAt: now })
+      .where(eq(authSessions.id, session.id));
+  }
+  return { user, method: "wallet" };
+}
+
+export async function authenticateRequestContext(
+  request: Request
+): Promise<AuthenticatedRequestContext> {
+  const walletSession = await authenticateWalletSession(request);
+  if (walletSession) return walletSession;
+  throw new AuthenticationError(
+    "Connect and verify a wallet to continue."
   );
+}
+
+export async function authenticateOptionalRequest(request: Request) {
+  const hasWalletCookie = Boolean(sessionTokenFromRequest(request));
+  if (!hasWalletCookie) return null;
+  try {
+    return await authenticateRequestContext(request);
+  } catch (error) {
+    if (
+      hasWalletCookie &&
+      error instanceof AuthenticationError &&
+      error.status === 401
+    ) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function authenticateRequest(
   request: Request
 ): Promise<AuthenticatedUser> {
-  await ensureDatabase();
-  const db = getDb();
-
-  if (isLocalPreview(request)) {
-    const [demoUser] = await db.select().from(users).where(eq(users.id, 1)).limit(1);
-    if (!demoUser) {
-      throw new AuthenticationError("Local preview user is unavailable.");
-    }
-    return demoUser;
-  }
-
-  const botToken = getBinding("TELEGRAM_BOT_TOKEN");
-  if (!botToken) {
-    throw new AuthenticationError(
-      "Telegram launch is not configured yet.",
-      503
-    );
-  }
-
-  const initData = request.headers.get("x-telegram-init-data") ?? "";
-  let validated: Awaited<ReturnType<typeof validateTelegramInitData>>;
-  try {
-    validated = await validateTelegramInitData(initData, botToken);
-  } catch {
-    throw new AuthenticationError(
-      "Telegram session is invalid or expired."
-    );
-  }
-  const telegramId = String(validated.user.id);
-  const displayName = [validated.user.first_name, validated.user.last_name]
-    .filter(Boolean)
-    .join(" ")
-    .slice(0, 128);
-
-  await db
-    .insert(users)
-    .values({
-      telegramId,
-      username: validated.user.username?.slice(0, 64),
-      displayName,
-      photoUrl: validated.user.photo_url?.slice(0, 1024),
-    })
-    .onConflictDoUpdate({
-      target: users.telegramId,
-      set: {
-        username: validated.user.username?.slice(0, 64),
-        displayName,
-        photoUrl: validated.user.photo_url?.slice(0, 1024),
-        updatedAt: new Date().toISOString(),
-      },
-    });
-
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.telegramId, telegramId))
-    .limit(1);
-
-  if (!user) {
-    throw new Error("Telegram profile could not be created.");
-  }
-  if (user.moderationStatus === "banned") {
-    throw new AuthenticationError(
-      "This EzWallet profile has been suspended.",
-      403
-    );
-  }
-  return user;
+  return (await authenticateRequestContext(request)).user;
 }
 
 export function authErrorResponse(error: unknown) {

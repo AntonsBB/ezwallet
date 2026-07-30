@@ -1,0 +1,66 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "easy-wallet",
+	"main": "./worker/index.ts",
+	"compatibility_date": "2026-07-29",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "easy-wallet-local",
+			"database_id": "7c1f9b7d-9de3-4ec9-90d5-6ff5d3e474c6",
+			"migrations_dir": "drizzle"
+		}
+	],
+  "kv_namespaces": [
+    {
+      "binding": "MEDIA",
+      "id": "272606e07a404e5d9c932e23090275eb"
+    }
+  ],
+	"env": {
+		"production": {
+			"name": "easy-wallet-production",
+			"workers_dev": false,
+			"routes": [
+				{
+					"pattern": "easywallet.rexai.world",
+					"custom_domain": true
+				}
+			],
+			"vars": {
+				"ENVIRONMENT": "production",
+				"TON_NETWORK": "testnet",
+				"MINI_APP_URL": "https://easywallet.rexai.world",
+				"TELEGRAM_BOT_USERNAME": "EasyWalletRexBot"
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "easy-wallet-production",
+					"database_id": "a4cc180f-7b8f-4268-bdaa-55bf69571adc",
+					"migrations_dir": "drizzle"
+				}
+			],
+      "kv_namespaces": [
+        {
+          "binding": "MEDIA",
+          "id": "272606e07a404e5d9c932e23090275eb"
+        }
+      ],
+			"triggers": {
+				"crons": [
+					"*/2 * * * *"
+				]
+			},
+			"observability": {
+				"enabled": true
+			}
+		}
+	}
+}

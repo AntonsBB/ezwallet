@@ -1,6 +1,6 @@
 # Security policy
 
-EzWallet handles marketplace identity, user-generated content, and non-custodial cryptocurrency payment metadata. Security reports are welcome.
+Easy Wallet handles marketplace identity, user-generated content, and non-custodial cryptocurrency payment metadata. Security reports are welcome.
 
 ## Reporting a vulnerability
 
@@ -20,10 +20,13 @@ Include:
 
 High-priority areas include:
 
-- Telegram Mini App init-data validation or replay;
+- wallet session theft, fixation, revocation, CSRF, or replay;
+- optional Telegram Mini App init-data validation or replay;
 - session fixation, CSRF, authorization, or IDOR;
 - TON proof validation or wallet/account substitution;
-- payment amount, recipient, fee, network, or status manipulation;
+- escrow code/data substitution, payment amount, recipient, fee, deadline,
+  network, action, or status manipulation;
+- unauthorized delivery, release, refund, or dispute resolution;
 - duplicate or replayed deals and transactions;
 - SQL injection or unsafe query construction;
 - unrestricted uploads, stored XSS, content-sniffing, or object access;
@@ -41,7 +44,12 @@ Only the latest production deployment and the default branch receive security up
 
 ## Security model
 
-- EzWallet is non-custodial and never requests seed phrases or private keys.
-- A wallet-signed submission is not considered confirmed payment until independently verified on-chain.
-- Telegram identity and TON wallet ownership are distinct checks.
+- Easy Wallet is non-custodial and never requests seed phrases or private keys.
+- A wallet-signed submission is not considered confirmed funding or settlement
+  until independently verified on-chain.
+- Native-TON escrow remains testnet-only until the contract and reconciliation
+  paths receive independent security review and end-to-end adversarial testing.
+- TON wallet ownership proof is the primary account check. Optional Telegram
+  identity is a distinct compatibility check and does not authorize escrow
+  arbitration.
 - Government-ID, NFC passport, custody, fiat exchange, and tax-reporting systems are not part of the initial public release.

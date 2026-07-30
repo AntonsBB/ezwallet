@@ -148,7 +148,7 @@ export async function verifyTonProof(
     normalizedDomain !== expected ||
     payload.proof.domain.lengthBytes !== encodedDomain.length
   ) {
-    throw new Error("Wallet proof domain does not match EzWallet.");
+    throw new Error("Wallet proof domain does not match Easy Wallet.");
   }
 
   let stateInit;

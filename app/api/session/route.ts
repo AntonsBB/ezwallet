@@ -1,14 +1,26 @@
 import { desc, eq, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
-import { deals, listings, users } from "@/db/schema";
-import { authenticateRequest, authErrorResponse } from "@/lib/auth";
+import {
+  dealFulfillments,
+  deals,
+  listings,
+  users,
+  verificationAttestations,
+} from "@/db/schema";
+import {
+  authenticateRequestContext,
+  authErrorResponse,
+} from "@/lib/auth";
+import { noStoreJson } from "@/lib/security";
+import { verificationSummary } from "@/lib/verification";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request) {
+async function handleSession(request: Request) {
   try {
-    const user = await authenticateRequest(request);
+    const authentication = await authenticateRequestContext(request);
+    const user = authentication.user;
     const db = getDb();
     const buyerUser = alias(users, "buyer_user");
     const sellerUser = alias(users, "seller_user");
@@ -19,11 +31,25 @@ export async function POST(request: Request) {
         title: listings.title,
         imageUrl: listings.imageUrl,
         grossNano: deals.grossNano,
+        buyerFeeNano: deals.buyerFeeNano,
+        sellerFeeNano: deals.sellerFeeNano,
+        buyerTotalNano: deals.buyerTotalNano,
         platformFeeNano: deals.platformFeeNano,
         sellerAmountNano: deals.sellerAmountNano,
+        asset: deals.asset,
+        escrowAddress: deals.escrowAddress,
+        escrowStatus: deals.escrowStatus,
+        escrowFundingAmountNano: deals.escrowFundingAmountNano,
+        deliveryDeadlineUnix: deals.deliveryDeadlineUnix,
+        reviewWindowSeconds: deals.reviewWindowSeconds,
+        reviewDeadlineUnix: deals.reviewDeadlineUnix,
         status: deals.status,
         network: deals.network,
         transactionRef: deals.transactionRef,
+        fulfillmentMode: dealFulfillments.mode,
+        carrier: dealFulfillments.carrier,
+        trackingCode: dealFulfillments.trackingCode,
+        shippedAt: dealFulfillments.shippedAt,
         buyerId: deals.buyerId,
         sellerId: deals.sellerId,
         buyerName: buyerUser.displayName,
@@ -34,12 +60,32 @@ export async function POST(request: Request) {
       .innerJoin(listings, eq(deals.listingId, listings.id))
       .innerJoin(buyerUser, eq(buyerUser.id, deals.buyerId))
       .innerJoin(sellerUser, eq(sellerUser.id, deals.sellerId))
+      .leftJoin(dealFulfillments, eq(dealFulfillments.dealId, deals.id))
       .where(or(eq(deals.buyerId, user.id), eq(deals.sellerId, user.id)))
       .orderBy(desc(deals.createdAt))
       .limit(20);
+    const attestations = await db
+      .select({
+        kind: verificationAttestations.kind,
+        status: verificationAttestations.status,
+        assuranceLevel: verificationAttestations.assuranceLevel,
+        verifiedAt: verificationAttestations.verifiedAt,
+        expiresAt: verificationAttestations.expiresAt,
+      })
+      .from(verificationAttestations)
+      .where(eq(verificationAttestations.userId, user.id));
+    const verification = verificationSummary(
+      Boolean(user.walletVerifiedAt),
+      attestations
+    );
 
-    return Response.json({
-      user,
+    return noStoreJson({
+      user: {
+        ...user,
+        verificationLevel: verification.level,
+        verificationLabel: verification.label,
+      },
+      session: { method: authentication.method },
       deals: recentDeals.slice(0, 10).map((deal) => ({
         ...deal,
         counterpartyName:
@@ -50,3 +96,6 @@ export async function POST(request: Request) {
     return authErrorResponse(error);
   }
 }
+
+export const GET = handleSession;
+export const POST = handleSession;

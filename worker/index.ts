@@ -1,34 +1,33 @@
-/** Cloudflare Worker entry point for the vinext-starter template. */
-import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
+/** Cloudflare Worker entry point for Easy Wallet. */
 import handler from "vinext/server/app-router-entry";
 import { reconcilePendingDeals } from "../lib/ton-payment";
 
-interface Env {
-  ASSETS: Fetcher;
-  DB: D1Database;
-  IMAGES: {
-    input(stream: ReadableStream): {
-      transform(options: Record<string, unknown>): {
-        output(options: { format: string; quality: number }): Promise<{ response(): Response }>;
-      };
-    };
-  };
-}
-
-interface ExecutionContext {
-  waitUntil(promise: Promise<unknown>): void;
-  passThroughOnException(): void;
-}
+type EasyWalletEnv = Env & {
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_BOT_USERNAME?: string;
+  TELEGRAM_WEBHOOK_SECRET?: string;
+  MINI_APP_URL?: string;
+  PLATFORM_FEE_ADDRESS?: string;
+  ESCROW_ARBITRATOR_ADDRESS?: string;
+  TON_NETWORK?: string;
+  TONCENTER_API_KEY?: string;
+  RECONCILE_SECRET?: string;
+  DEAL_DATA_ENCRYPTION_KEY?: string;
+};
 
 function withSecurityHeaders(response: Response) {
   const secured = new Response(response.body, response);
   secured.headers.set("x-content-type-options", "nosniff");
-  secured.headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  secured.headers.set("referrer-policy", "no-referrer");
   secured.headers.set(
     "permissions-policy",
-    "camera=(), microphone=(), geolocation=(), payment=()"
+    "camera=(), microphone=(), geolocation=(self), payment=()"
   );
   secured.headers.set("cross-origin-opener-policy", "same-origin-allow-popups");
+  secured.headers.set(
+    "strict-transport-security",
+    "max-age=31536000; includeSubDomains"
+  );
   secured.headers.set(
     "content-security-policy",
     [
@@ -57,25 +56,16 @@ function withSecurityHeaders(response: Response) {
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(request.url);
-
-    if (url.pathname === "/_vinext/image") {
-      const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
-      return withSecurityHeaders(await handleImageOptimization(request, {
-        fetchAsset: (path) => env.ASSETS.fetch(new Request(new URL(path, request.url))),
-        transformImage: async (body, { width, format, quality }) => {
-          const result = await env.IMAGES.input(body).transform(width > 0 ? { width } : {}).output({ format, quality });
-          return result.response();
-        },
-      }, allowedWidths));
-    }
-
+  async fetch(
+    request: Request,
+    env: EasyWalletEnv,
+    ctx: ExecutionContext
+  ): Promise<Response> {
     return withSecurityHeaders(await handler.fetch(request, env, ctx));
   },
   async scheduled(
     _controller: ScheduledController,
-    _env: Env,
+    _env: EasyWalletEnv,
     ctx: ExecutionContext
   ) {
     ctx.waitUntil(
@@ -91,4 +81,4 @@ const worker = {
   },
 };
 
-export default worker;
+export default worker satisfies ExportedHandler<EasyWalletEnv>;
